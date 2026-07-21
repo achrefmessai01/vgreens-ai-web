@@ -152,6 +152,56 @@ export interface CreateJobBody {
   priority?: number;
 }
 
+export interface DatasetSummary {
+  dataset_name: string;
+  versions: number;
+  latest_frozen_at?: string | null;
+}
+
+export interface DatasetVersion {
+  dataset_name: string;
+  version: string;
+  task?: string | null;
+  image_count?: number | null;
+  class_count?: number | null;
+  licence_status?: string | null;
+  content_digest?: string | null;
+  nas_path?: string | null;
+  frozen_at?: string | null;
+  frozen_by?: string | null;
+}
+
+export interface DatasetImportEvent {
+  ts?: string;
+  state?: string;
+  detail?: string | null;
+}
+
+export interface DatasetImport {
+  import_id: string;
+  dataset_name: string;
+  source_type: string;
+  source_params?: Record<string, unknown>;
+  state: string;
+  requested_version?: string | null;
+  resolved_version?: string | null;
+  licence_name?: string | null;
+  licence_status?: string | null;
+  requested_by?: string | null;
+  error?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  events?: DatasetImportEvent[];
+}
+
+export interface CreateDatasetImportBody {
+  source_type: "roboflow" | "local" | "nas";
+  dataset_name: string;
+  source: Record<string, unknown>;
+  requested_version?: string;
+  idempotency_key?: string;
+}
+
 export const api = {
   health: () => request<Health>("/health/ready"),
   version: () => request<Version>("/version"),
@@ -201,4 +251,38 @@ export const api = {
   jobEvents: (id: string) => request<JobEvent[]>(`/jobs/${encodeURIComponent(id)}/events`),
   cancelJob: (id: string) =>
     request<unknown>(`/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
+
+  // ---- Dataset Factory ----
+  datasets: async (): Promise<DatasetSummary[]> => {
+    const r = await request<{ datasets: DatasetSummary[] }>("/datasets");
+    return r.datasets ?? [];
+  },
+  datasetVersions: (name: string) =>
+    request<DatasetVersion[]>(`/datasets/${encodeURIComponent(name)}/versions`),
+  datasetImports: (params: { state?: string; dataset_name?: string; limit?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (params.state) q.set("state", params.state);
+    if (params.dataset_name) q.set("dataset_name", params.dataset_name);
+    q.set("limit", String(params.limit ?? 50));
+    return request<DatasetImport[]>(`/datasets/imports?${q.toString()}`);
+  },
+  datasetImport: (id: string) =>
+    request<DatasetImport>(`/datasets/imports/${encodeURIComponent(id)}`),
+  createDatasetImport: (body: CreateDatasetImportBody) =>
+    request<{ import_id: string; state: string }>("/datasets/imports", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  approveLicense: (id: string, reason?: string, licence_name?: string) =>
+    request<unknown>(`/datasets/imports/${encodeURIComponent(id)}/approve-license`, {
+      method: "POST",
+      body: JSON.stringify({ reason: reason || undefined, licence_name: licence_name || undefined }),
+    }),
+  rejectLicense: (id: string, reason?: string) =>
+    request<unknown>(`/datasets/imports/${encodeURIComponent(id)}/reject-license`, {
+      method: "POST",
+      body: JSON.stringify({ reason: reason || undefined }),
+    }),
+  cancelDatasetImport: (id: string) =>
+    request<unknown>(`/datasets/imports/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
 };

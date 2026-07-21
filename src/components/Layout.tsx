@@ -10,6 +10,7 @@ export default function Layout() {
         </div>
         <nav className="nav">
           <NavLink to="/" end className={link}>Dashboard</NavLink>
+          <NavLink to="/datasets" className={link}>Datasets</NavLink>
           <NavLink to="/jobs" className={link}>Jobs</NavLink>
           <NavLink to="/submit" className={link}>Submit</NavLink>
           <NavLink to="/models" className={link}>Models</NavLink>

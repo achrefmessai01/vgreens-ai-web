@@ -78,6 +78,7 @@ body {
 .badge.bad { background: rgba(224,106,90,.15); color: var(--red); }
 .badge.run { background: rgba(79,182,201,.15); color: var(--cyan); }
 .badge.neutral { background: rgba(224,179,65,.15); color: var(--amber); }
+.badge.muted { background: var(--panel-2); color: var(--muted); }
 
 /* ---- controls ---- */
 .input {

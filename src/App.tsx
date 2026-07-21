@@ -9,6 +9,10 @@ import JobDetailPage from "./pages/JobDetailPage";
 import SubmitPage from "./pages/SubmitPage";
 import ModelsPage from "./pages/ModelsPage";
 import ModelDetailPage from "./pages/ModelDetailPage";
+import DatasetsPage from "./pages/DatasetsPage";
+import DatasetDetailPage from "./pages/DatasetDetailPage";
+import DatasetImportPage from "./pages/DatasetImportPage";
+import DatasetImportDetailPage from "./pages/DatasetImportDetailPage";
 
 export default function App() {
   const [authed, setAuthed] = useState(isAuthed());
@@ -25,6 +29,10 @@ export default function App() {
           <Route path="submit" element={<SubmitPage />} />
           <Route path="models" element={<ModelsPage />} />
           <Route path="models/:model" element={<ModelDetailPage />} />
+          <Route path="datasets" element={<DatasetsPage />} />
+          <Route path="datasets/new" element={<DatasetImportPage />} />
+          <Route path="datasets/imports/:id" element={<DatasetImportDetailPage />} />
+          <Route path="datasets/:name" element={<DatasetDetailPage />} />
         </Route>
       </Routes>
     </HashRouter>
