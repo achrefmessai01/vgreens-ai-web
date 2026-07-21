@@ -49,6 +49,7 @@ body {
 .nav { flex: 1; display: flex; gap: 16px; }
 .nav-item { color: var(--muted); cursor: default; }
 .nav-item.active { color: var(--text); }
+.user-box { display: flex; align-items: center; }
 .content { padding: 24px; max-width: 1080px; margin: 0 auto; }
 
 /* ---- dashboard ---- */

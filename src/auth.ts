@@ -1,28 +1,18 @@
-// Token-based auth for the MVP. The API only supports static bearer tokens
-// today, so we store the token locally and send it as Authorization: Bearer.
-// Real users/sessions/roles arrive in Milestone 4 (production access); the API
-// stays the security boundary — this is only a convenience for the browser.
-const KEY = "vgreens_ai_token";
-
-export function getToken(): string | null {
-  return localStorage.getItem(KEY);
-}
-
-export function setToken(token: string): void {
-  localStorage.setItem(KEY, token.trim());
-}
-
-export function clearToken(): void {
-  localStorage.removeItem(KEY);
-}
-
-export function isAuthed(): boolean {
-  return !!getToken();
-}
-
-// Called when the API rejects the token mid-session. Clearing + reloading sends
-// the user back to the login screen (App re-reads isAuthed on mount).
+// Session-cookie auth. The browser holds no token — authentication is the
+// HttpOnly `vg_session` cookie set by the API on login. On a 401 we bounce the
+// user back to the login screen by reloading (App re-checks /auth/me).
 export function handleAuthLost(): void {
-  clearToken();
   window.location.reload();
+}
+
+export interface AuthUser {
+  username: string;
+  role: "viewer" | "operator" | "admin" | string;
+  via?: string;
+}
+
+const RANK: Record<string, number> = { viewer: 0, operator: 1, admin: 2 };
+
+export function roleAtLeast(role: string | undefined, minimum: string): boolean {
+  return (RANK[role ?? ""] ?? -1) >= (RANK[minimum] ?? 99);
 }

@@ -1,7 +1,5 @@
-// Thin fetch client over the Job API. Mirrors the CLI's client: adds the bearer
-// token, maps HTTP status to typed errors, and returns parsed JSON.
-import { clearToken, getToken } from "./auth";
-
+// Thin fetch client over the Job API. Auth is the HttpOnly session cookie
+// (credentials: "include"); maps HTTP status to typed errors; returns parsed JSON.
 const BASE = (import.meta.env.VITE_API_BASE_URL as string) || "/api";
 
 export class ApiError extends Error {
@@ -16,15 +14,14 @@ export class ApiError extends Error {
 }
 
 async function rawRequest(path: string, init?: RequestInit): Promise<Response> {
-  const token = getToken();
   let res: Response;
   try {
     res = await fetch(`${BASE}${path}`, {
       ...init,
+      credentials: "include",
       headers: {
         Accept: "application/json",
         ...(init?.body ? { "Content-Type": "application/json" } : {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(init?.headers || {}),
       },
     });
@@ -33,8 +30,7 @@ async function rawRequest(path: string, init?: RequestInit): Promise<Response> {
   }
 
   if (res.status === 401 || res.status === 403) {
-    clearToken();
-    throw new ApiError(res.status, "auth", "Authentication failed. Sign in again.");
+    throw new ApiError(res.status, "auth", "Authentication required.");
   }
   if (res.status === 404) throw new ApiError(404, "not_found", await msg(res, "Not found."));
   if (res.status === 409) throw new ApiError(409, "conflict", await msg(res, "Conflict."));
@@ -203,6 +199,15 @@ export interface CreateDatasetImportBody {
 }
 
 export const api = {
+  // auth (session cookie)
+  me: () => request<{ username: string; role: string; via?: string }>("/auth/me"),
+  login: (username: string, password: string) =>
+    request<{ username: string; role: string }>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: () => request<unknown>("/auth/logout", { method: "POST" }),
+
   health: () => request<Health>("/health/ready"),
   version: () => request<Version>("/version"),
   workers: () => request<Worker[]>("/workers"),

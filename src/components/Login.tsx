@@ -1,28 +1,25 @@
 import { useState } from "react";
 import { api, ApiError } from "../api";
-import { setToken } from "../auth";
+import type { AuthUser } from "../auth";
 
-export default function Login({ onAuthed }: { onAuthed: () => void }) {
-  const [token, setTok] = useState("");
+export default function Login({ onAuthed }: { onAuthed: (u: AuthUser) => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!token.trim()) return;
+    if (!username.trim() || !password) return;
     setBusy(true);
     setError(null);
-    setToken(token);
     try {
-      await api.probe(); // validates token against /version
-      onAuthed();
+      const user = await api.login(username.trim(), password);
+      onAuthed(user as AuthUser);
     } catch (err) {
-      const msg =
-        err instanceof ApiError
-          ? err.code === "auth"
-            ? "That token was rejected by the API."
-            : err.message
-          : "Something went wrong.";
+      const msg = err instanceof ApiError
+        ? (err.code === "auth" ? "Invalid username or password." : err.message)
+        : "Something went wrong.";
       setError(msg);
       setBusy(false);
     }
@@ -31,26 +28,16 @@ export default function Login({ onAuthed }: { onAuthed: () => void }) {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
-        <div className="brand big">
-          <span className="dot" /> vGreens AI
-        </div>
-        <p className="muted">Internal platform. Paste your API token to continue.</p>
-        <input
-          type="password"
-          className="input"
-          placeholder="API token"
-          value={token}
-          autoFocus
-          onChange={(e) => setTok(e.target.value)}
-        />
+        <div className="brand big"><span className="dot" /> vGreens AI</div>
+        <p className="muted">Sign in to the internal AI platform.</p>
+        <input className="input" placeholder="Username" value={username} autoFocus
+          autoComplete="username" onChange={(e) => setUsername(e.target.value)} />
+        <input className="input" type="password" placeholder="Password" value={password}
+          autoComplete="current-password" onChange={(e) => setPassword(e.target.value)} />
         {error && <div className="error-box">{error}</div>}
-        <button className="btn primary" disabled={busy || !token.trim()}>
-          {busy ? "Checking…" : "Sign in"}
+        <button className="btn primary" disabled={busy || !username.trim() || !password}>
+          {busy ? "Signing in…" : "Sign in"}
         </button>
-        <p className="hint muted">
-          The token is the same bearer token used by the CLI. It is stored only in
-          this browser.
-        </p>
       </form>
     </div>
   );
