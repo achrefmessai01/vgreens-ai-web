@@ -198,6 +198,28 @@ export interface CreateDatasetImportBody {
   idempotency_key?: string;
 }
 
+export interface AdminUser {
+  id: number;
+  username: string;
+  display_name?: string | null;
+  email?: string | null;
+  role: string;
+  active: number | boolean;
+  created_at?: string | null;
+  last_login?: string | null;
+}
+
+export interface TokenMeta {
+  id: string;
+  name?: string | null;
+  owner?: string | null;
+  scopes?: string | null;
+  created_at?: string | null;
+  expires_at?: string | null;
+  last_used?: string | null;
+  revoked: number | boolean;
+}
+
 export const api = {
   // auth (session cookie)
   me: () => request<{ username: string; role: string; via?: string }>("/auth/me"),
@@ -207,6 +229,24 @@ export const api = {
       body: JSON.stringify({ username, password }),
     }),
   logout: () => request<unknown>("/auth/logout", { method: "POST" }),
+
+  // admin: users + tokens (admin role only; API enforces)
+  adminUsers: () => request<AdminUser[]>("/admin/users"),
+  adminCreateUser: (body: { username: string; password: string; role: string;
+    display_name?: string; email?: string }) =>
+    request<AdminUser>("/admin/users", { method: "POST", body: JSON.stringify(body) }),
+  adminUpdateUser: (id: number, body: { role?: string; active?: boolean }) =>
+    request<AdminUser>(`/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  adminResetPassword: (id: number, new_password: string) =>
+    request<unknown>(`/admin/users/${id}/reset-password`, {
+      method: "POST", body: JSON.stringify({ new_password }),
+    }),
+  adminTokens: () => request<TokenMeta[]>("/admin/tokens"),
+  adminCreateToken: (body: { name: string; owner?: string; scopes?: string }) =>
+    request<{ id: string; name: string; owner: string; scopes: string; token: string }>(
+      "/admin/tokens", { method: "POST", body: JSON.stringify(body) }),
+  adminRevokeToken: (id: string) =>
+    request<unknown>(`/admin/tokens/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   health: () => request<Health>("/health/ready"),
   version: () => request<Version>("/version"),

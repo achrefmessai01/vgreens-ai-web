@@ -23,6 +23,9 @@ export default function Layout() {
             <NavLink to="/submit" className={link}>Submit</NavLink>
           )}
           <NavLink to="/models" className={link}>Models</NavLink>
+          {roleAtLeast(user?.role, "admin") && (
+            <NavLink to="/admin" className={link}>Admin</NavLink>
+          )}
         </nav>
         <div className="user-box">
           <span className="muted">{user?.username}</span>
