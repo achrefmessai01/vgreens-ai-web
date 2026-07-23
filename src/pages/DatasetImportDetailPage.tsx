@@ -1,19 +1,37 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, ApiError, type DatasetImport } from "../api";
-import { handleAuthLost } from "../auth";
+import { handleAuthLost, roleAtLeast } from "../auth";
+import { useAuth } from "../AuthContext";
 import StatusBadge from "../components/StatusBadge";
+import { ConfirmDialog } from "../ui";
 import { fmt } from "../lib/format";
 
 const ACTIVE = ["submitted", "downloading", "staging", "quarantined", "auditing", "normalising", "freezing"];
 
+type DialogSpec = {
+  title: string;
+  body?: ReactNode;
+  confirmLabel: string;
+  danger?: boolean;
+  ok: string;
+  action: () => Promise<unknown>;
+};
+
 export default function DatasetImportDetailPage() {
   const { id = "" } = useParams();
+  const { user } = useAuth();
+  const canApprove = roleAtLeast(user?.role, "admin");
+
   const [imp, setImp] = useState<DatasetImport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [acting, setActing] = useState(false);
+  const [reason, setReason] = useState("");
+
+  const [dialog, setDialog] = useState<DialogSpec | null>(null);
+  const [dialogBusy, setDialogBusy] = useState(false);
+  const [dialogError, setDialogError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -33,20 +51,20 @@ export default function DatasetImportDetailPage() {
     return () => clearInterval(t);
   }, [load]);
 
-  async function act(fn: () => Promise<unknown>, ok: string) {
-    if (!window.confirm(ok + "?")) return;
-    setActing(true);
-    setError(null);
-    setNotice(null);
+  async function confirmRun() {
+    if (!dialog) return;
+    setDialogBusy(true); setDialogError(null);
     try {
-      await fn();
+      await dialog.action();
+      const ok = dialog.ok;
+      setDialog(null);
       setNotice(ok);
       await load();
     } catch (e) {
       if (e instanceof ApiError && e.code === "auth") return handleAuthLost();
-      setError(e instanceof Error ? e.message : "Action failed.");
+      setDialogError(e instanceof Error ? e.message : "Action failed.");
     } finally {
-      setActing(false);
+      setDialogBusy(false);
     }
   }
 
@@ -64,8 +82,14 @@ export default function DatasetImportDetailPage() {
         <div className="dash-meta">
           {imp && <StatusBadge status={state} />}
           {cancellable && (
-            <button className="btn danger" disabled={acting}
-              onClick={() => act(() => api.cancelDatasetImport(id), "Cancel this import")}>Cancel</button>
+            <button className="btn danger"
+              onClick={() => setDialog({
+                title: "Cancel this import?",
+                confirmLabel: "Cancel import",
+                danger: true,
+                ok: "import cancelled",
+                action: () => api.cancelDatasetImport(id),
+              })}>Cancel</button>
           )}
         </div>
       </div>
@@ -74,21 +98,43 @@ export default function DatasetImportDetailPage() {
       {error && <div className="error-box wide">{error}</div>}
 
       {awaiting && (
-        <section className="panel" style={{ borderColor: "var(--amber)" }}>
+        <section className="panel warn">
           <h2>Licence approval required</h2>
           <p className="muted">
-            This is an external dataset. Approving records you as the approver and re-queues the
-            import to freeze. Only approve if the licence permits internal use.
+            This is an external dataset. Approving records you as the approver and re-queues the import
+            to freeze. Only approve if the licence permits internal use.
           </p>
-          <div className="form-actions" style={{ justifyContent: "flex-start" }}>
-            <button className="btn primary" disabled={acting}
-              onClick={() => act(() => api.approveLicense(id, "approved via web", imp?.licence_name || undefined),
-                "Approve the licence")}>Approve licence</button>
-            <button className="btn danger" disabled={acting}
-              onClick={() => act(() => api.rejectLicense(id, "rejected via web"), "Reject the licence")}>
-              Reject
-            </button>
-          </div>
+          {!canApprove ? (
+            <div className="warn-box">Licence approval requires the admin role.</div>
+          ) : (
+            <>
+              <div className="field" style={{ maxWidth: 520 }}>
+                <label className="field-label">Reason / note (recorded in the audit trail)</label>
+                <textarea className="input" rows={2} value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  placeholder="e.g. CC-BY 4.0, cleared for internal training" />
+              </div>
+              <div className="form-actions" style={{ justifyContent: "flex-start" }}>
+                <button className="btn primary"
+                  onClick={() => setDialog({
+                    title: "Approve this licence?",
+                    confirmLabel: "Approve & re-queue",
+                    ok: "licence approved — re-queued to freeze",
+                    action: () => api.approveLicense(id, reason || "approved via web", imp?.licence_name || undefined),
+                    body: <>The dataset will proceed to freeze and become usable for training. You are recorded as the approver.</>,
+                  })}>Approve licence</button>
+                <button className="btn danger"
+                  onClick={() => setDialog({
+                    title: "Reject this licence?",
+                    confirmLabel: "Reject import",
+                    danger: true,
+                    ok: "licence rejected — import rejected",
+                    action: () => api.rejectLicense(id, reason || "rejected via web"),
+                    body: <>The import will be rejected and will not be frozen.</>,
+                  })}>Reject</button>
+              </div>
+            </>
+          )}
         </section>
       )}
 
@@ -133,6 +179,19 @@ export default function DatasetImportDetailPage() {
         </>
       )}
       {loading && !imp && <p className="muted">Loading…</p>}
+
+      {dialog && (
+        <ConfirmDialog
+          title={dialog.title}
+          body={dialog.body}
+          confirmLabel={dialog.confirmLabel}
+          danger={dialog.danger}
+          busy={dialogBusy}
+          error={dialogError}
+          onConfirm={confirmRun}
+          onCancel={() => { if (!dialogBusy) { setDialog(null); setDialogError(null); } }}
+        />
+      )}
     </div>
   );
 }

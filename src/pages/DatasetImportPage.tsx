@@ -2,8 +2,15 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError, type CreateDatasetImportBody } from "../api";
 import { handleAuthLost } from "../auth";
+import { PageHeader } from "../ui";
 
 type Source = "roboflow" | "local" | "nas";
+
+const SOURCE_HINT: Record<Source, string> = {
+  roboflow: "Pull from Roboflow. External sources pause for licence approval after the audit.",
+  local: "Import from an allowlisted directory or .zip already staged on the server.",
+  nas: "Import from an allowlisted path on the shared NAS storage.",
+};
 
 export default function DatasetImportPage() {
   const navigate = useNavigate();
@@ -48,8 +55,8 @@ export default function DatasetImportPage() {
   }
 
   return (
-    <div className="dash">
-      <div className="dash-head"><h1>Import dataset</h1></div>
+    <div>
+      <PageHeader title="Import dataset" description="Bring a dataset in through the import → audit → licence → freeze pipeline." />
 
       <form className="panel form" onSubmit={submit}>
         <div className="seg">
@@ -58,6 +65,7 @@ export default function DatasetImportPage() {
               onClick={() => setSource(s)}>{s}</button>
           ))}
         </div>
+        <p className="muted" style={{ margin: "-4px 0 4px", fontSize: 13 }}>{SOURCE_HINT[source]}</p>
 
         <Field label="Dataset name" required hint="Registry key, lowercase [a-z0-9_].">
           <input className="input" value={name} onChange={(e) => setName(e.target.value)}

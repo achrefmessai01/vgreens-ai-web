@@ -137,6 +137,9 @@ body {
 .error-box { background: rgba(224,106,90,.12); border: 1px solid rgba(224,106,90,.4); color: var(--red); padding: 10px 12px; border-radius: 8px; font-size: 13px; }
 .error-box.wide { margin: 12px 0; }
 .notice-box { background: rgba(53,194,129,.12); border: 1px solid rgba(53,194,129,.4); color: var(--green); padding: 10px 12px; border-radius: 8px; font-size: 13px; margin: 12px 0; }
+.warn-box { background: rgba(224,179,65,.12); border: 1px solid rgba(224,179,65,.45); color: var(--amber); padding: 10px 12px; border-radius: 8px; font-size: 13px; margin: 12px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.warn-box.wide { margin: 12px 0; }
+.panel.warn { border-color: rgba(224,179,65,.5); }
 
 .btn.danger { background: rgba(224,106,90,.15); border-color: rgba(224,106,90,.4); color: var(--red); }
 .btn.danger:hover:not(:disabled) { border-color: var(--red); }
