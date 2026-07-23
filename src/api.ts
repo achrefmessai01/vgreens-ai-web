@@ -84,9 +84,10 @@ export interface JobEvent {
 }
 
 export interface Worker {
-  worker_id: string;
-  status?: string;
+  name: string;
+  online?: boolean;
   last_seen?: string | null;
+  seconds_since_heartbeat?: number | null;
   current_job?: string | null;
 }
 
