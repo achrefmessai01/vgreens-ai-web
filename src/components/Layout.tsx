@@ -2,9 +2,11 @@ import { NavLink, Outlet } from "react-router-dom";
 import { api } from "../api";
 import { roleAtLeast } from "../auth";
 import { useAuth } from "../AuthContext";
+import { useTheme } from "../ThemeContext";
 
 export default function Layout() {
   const { user, setUser } = useAuth();
+  const { theme, toggle } = useTheme();
 
   async function signOut() {
     try { await api.logout(); } catch { /* ignore */ }
@@ -29,8 +31,12 @@ export default function Layout() {
           )}
         </nav>
         <div className="user-box">
+          <button className="theme-toggle" style={{ marginRight: 10 }} onClick={toggle}
+                  title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`} aria-label="Toggle theme">
+            {theme === "dark" ? "☀ Light" : "☾ Dark"}
+          </button>
           <span className="muted">{user?.username}</span>
-          <span className="badge neutral" style={{ marginLeft: 6 }}>{user?.role}</span>
+          <span className="badge info" style={{ marginLeft: 6 }}>{user?.role}</span>
           <button className="btn ghost" style={{ marginLeft: 10 }} onClick={signOut}>Sign out</button>
         </div>
       </header>
