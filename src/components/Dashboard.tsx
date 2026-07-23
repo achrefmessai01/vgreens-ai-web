@@ -101,8 +101,8 @@ export default function Dashboard() {
                 <tr key={g.index}>
                   <td>{g.index}</td>
                   <td>{g.name ?? "—"}</td>
-                  <td>{g.utilization != null ? `${g.utilization}%` : "—"}</td>
-                  <td>{g.memory_used != null && g.memory_total != null ? `${g.memory_used} / ${g.memory_total} MB` : "—"}</td>
+                  <td>{g.utilization_pct != null ? `${g.utilization_pct}%` : "—"}</td>
+                  <td>{g.memory_used_mb != null && g.memory_total_mb != null ? `${g.memory_used_mb} / ${g.memory_total_mb} MB` : "—"}</td>
                 </tr>
               ))}
             </tbody>

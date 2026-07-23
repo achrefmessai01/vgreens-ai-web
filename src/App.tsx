@@ -16,6 +16,7 @@ import DatasetDetailPage from "./pages/DatasetDetailPage";
 import DatasetImportPage from "./pages/DatasetImportPage";
 import DatasetImportDetailPage from "./pages/DatasetImportDetailPage";
 import AdminPage from "./pages/AdminPage";
+import MonitoringPage from "./pages/MonitoringPage";
 
 export default function App() {
   // undefined = still checking the session; null = logged out; object = logged in
@@ -52,6 +53,7 @@ export default function App() {
             <Route path="datasets/new" element={<DatasetImportPage />} />
             <Route path="datasets/imports/:id" element={<DatasetImportDetailPage />} />
             <Route path="datasets/:name" element={<DatasetDetailPage />} />
+            <Route path="monitoring" element={<MonitoringPage />} />
             <Route path="admin" element={<AdminPage />} />
           </Route>
         </Routes>

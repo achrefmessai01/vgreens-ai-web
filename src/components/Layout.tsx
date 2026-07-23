@@ -23,6 +23,7 @@ export default function Layout() {
             <NavLink to="/submit" className={link}>Submit</NavLink>
           )}
           <NavLink to="/models" className={link}>Models</NavLink>
+          <NavLink to="/monitoring" className={link}>Monitoring</NavLink>
           {roleAtLeast(user?.role, "admin") && (
             <NavLink to="/admin" className={link}>Admin</NavLink>
           )}

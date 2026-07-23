@@ -93,9 +93,10 @@ export interface Worker {
 export interface Gpu {
   index: number;
   name?: string;
-  utilization?: number;
-  memory_used?: number;
-  memory_total?: number;
+  utilization_pct?: number;
+  memory_used_mb?: number;
+  memory_total_mb?: number;
+  temperature_c?: number;
 }
 
 export interface Health {
@@ -220,6 +221,27 @@ export interface TokenMeta {
   revoked: number | boolean;
 }
 
+export interface AlertInfo {
+  name: string;
+  severity: string;
+  component?: string;
+  state: string;
+  summary?: string;
+  runbook?: string;
+}
+
+export interface SystemOverview {
+  nas_mounted: boolean;
+  workers: { online: number; total: number };
+  gpus: Gpu[];
+  queues: { type: string; depth: number; oldest_seconds: number }[];
+  queued_total: number;
+  oldest_queued_seconds: number;
+  jobs_by_status: Record<string, number>;
+  backups: { latest: string | null; count: number; age_seconds: number | null; size_bytes?: number };
+  alerts: { available: boolean; firing: { critical: number; warning: number }; list: AlertInfo[] };
+}
+
 export const api = {
   // auth (session cookie)
   me: () => request<{ username: string; role: string; via?: string }>("/auth/me"),
@@ -252,6 +274,8 @@ export const api = {
   version: () => request<Version>("/version"),
   workers: () => request<Worker[]>("/workers"),
   gpus: () => request<Gpu[]>("/gpus"),
+  systemOverview: () => request<SystemOverview>("/system/overview"),
+  systemAlerts: () => request<{ available: boolean; alerts: AlertInfo[] }>("/system/alerts"),
   probe: () => request<Version>("/version"),
 
   jobs: (limit = 10) => request<Job[]>(`/jobs?limit=${limit}`),
