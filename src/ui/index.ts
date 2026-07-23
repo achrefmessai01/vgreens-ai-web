@@ -4,3 +4,4 @@ export { PageHeader } from "./PageHeader";
 export { Skeleton } from "./Skeleton";
 export { EmptyState } from "./EmptyState";
 export { Badge } from "./Badge";
+export { ConfirmDialog } from "./ConfirmDialog";

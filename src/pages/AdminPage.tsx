@@ -1,36 +1,72 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type AdminUser, type TokenMeta } from "../api";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { api, ApiError, type AdminUser, type AuditEvent, type TokenMeta } from "../api";
 import { handleAuthLost } from "../auth";
+import { useAuth } from "../AuthContext";
 import { fmt } from "../lib/format";
+import { ConfirmDialog } from "../ui";
 
 const ROLES = ["viewer", "operator", "admin"];
 
+// server conflict codes → operator-friendly text
+const CONFLICT: Record<string, string> = {
+  USER_HAS_ACTIVE_SESSIONS: "This user still has active sessions. Force logout first, then delete.",
+  USER_HAS_ACTIVE_TOKENS: "This user owns active API tokens. Revoke them first, then delete.",
+  USER_HAS_ACTIVE_JOBS: "This user has queued or running jobs. Wait for them to finish (or cancel them) first.",
+  USER_IS_FINAL_ADMIN: "You can't remove the last active administrator — the platform must always keep one.",
+  CANNOT_DELETE_SELF: "You can't delete your own account.",
+  CANNOT_DISABLE_SELF: "You can't disable your own account.",
+  CANNOT_ANONYMISE_SELF: "You can't anonymise your own account.",
+};
+function friendly(e: unknown): string {
+  if (e instanceof ApiError) return CONFLICT[e.message] ?? e.message;
+  return e instanceof Error ? e.message : "Action failed.";
+}
+function isActive(u: AdminUser): boolean {
+  return u.active === 1 || u.active === true;
+}
+
+type DialogSpec = {
+  title: string;
+  body?: ReactNode;
+  confirmLabel: string;
+  danger?: boolean;
+  requirePhrase?: string;
+  ok: string;
+  action: () => Promise<unknown>;
+};
+
 export default function AdminPage() {
+  const { user: me } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [tokens, setTokens] = useState<TokenMeta[]>([]);
+  const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [newToken, setNewToken] = useState<string | null>(null);
 
-  // create-user form
+  const [dialog, setDialog] = useState<DialogSpec | null>(null);
+  const [dialogBusy, setDialogBusy] = useState(false);
+  const [dialogError, setDialogError] = useState<string | null>(null);
+
   const [nu, setNu] = useState({ username: "", password: "", role: "viewer" });
-  // create-token form
   const [nt, setNt] = useState({ name: "", scopes: "jobs:read jobs:submit" });
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [u, t] = await Promise.all([api.adminUsers(), api.adminTokens()]);
+      const [u, t, a] = await Promise.all([api.adminUsers(), api.adminTokens(), api.audit(40)]);
       setUsers(u);
       setTokens(t);
+      setAudit(a);
     } catch (e) {
       if (e instanceof ApiError && e.code === "auth") return handleAuthLost();
-      setError(e instanceof Error ? e.message : "Failed to load.");
+      setError(friendly(e));
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
 
+  // fire-and-reload for non-destructive actions
   async function run(fn: () => Promise<unknown>, ok: string) {
     setError(null); setNotice(null);
     try {
@@ -39,8 +75,60 @@ export default function AdminPage() {
       await load();
     } catch (e) {
       if (e instanceof ApiError && e.code === "auth") return handleAuthLost();
-      setError(e instanceof Error ? e.message : "Action failed.");
+      setError(friendly(e));
     }
+  }
+
+  async function confirmRun() {
+    if (!dialog) return;
+    setDialogBusy(true); setDialogError(null);
+    try {
+      await dialog.action();
+      const ok = dialog.ok;
+      setDialog(null);
+      setNotice(ok);
+      await load();
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "auth") return handleAuthLost();
+      setDialogError(friendly(e));
+    } finally {
+      setDialogBusy(false);
+    }
+  }
+
+  function openDelete(u: AdminUser) {
+    setDialog({
+      title: `Delete ${u.username}?`,
+      danger: true,
+      confirmLabel: "Delete permanently",
+      requirePhrase: u.username,
+      ok: `user '${u.username}' deleted`,
+      action: () => api.adminDeleteUser(u.id),
+      body: (
+        <>
+          This permanently removes the account. It only succeeds if the user has no active sessions,
+          tokens, or jobs. If you only want to retain history, use <b>Anonymise</b> instead.
+        </>
+      ),
+    });
+  }
+
+  function openAnonymise(u: AdminUser) {
+    setDialog({
+      title: `Anonymise ${u.username}?`,
+      danger: true,
+      confirmLabel: "Anonymise",
+      requirePhrase: u.username,
+      ok: `user '${u.username}' anonymised`,
+      action: () => api.adminAnonymiseUser(u.id),
+      body: (
+        <>
+          The account is renamed to <b className="mono">deleted_user_{u.id}</b>, its sessions and tokens
+          are revoked, and its password is scrambled. Audit history is kept but no longer names the person.
+          This cannot be undone.
+        </>
+      ),
+    });
   }
 
   async function createUser(e: React.FormEvent) {
@@ -54,12 +142,12 @@ export default function AdminPage() {
     setError(null); setNotice(null); setNewToken(null);
     try {
       const res = await api.adminCreateToken(nt);
-      setNewToken(res.token);      // shown once
+      setNewToken(res.token);
       setNt({ name: "", scopes: "jobs:read jobs:submit" });
       await load();
     } catch (e) {
       if (e instanceof ApiError && e.code === "auth") return handleAuthLost();
-      setError(e instanceof Error ? e.message : "Token creation failed.");
+      setError(friendly(e));
     }
   }
 
@@ -74,34 +162,53 @@ export default function AdminPage() {
       <section className="panel">
         <h2>Users</h2>
         <table className="table">
-          <thead><tr><th>User</th><th>Role</th><th>Active</th><th>Last login</th><th></th></tr></thead>
+          <thead><tr><th>User</th><th>Role</th><th>State</th><th>Last login</th><th style={{ textAlign: "right" }}>Actions</th></tr></thead>
           <tbody>
-            {users.map((u) => (
-              <tr key={u.id}>
-                <td>{u.username}</td>
-                <td>
-                  <select className="input sm" value={u.role}
-                    onChange={(e) => run(() => api.adminUpdateUser(u.id, { role: e.target.value }),
-                      `${u.username} → ${e.target.value}`)}>
-                    {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                </td>
-                <td>
-                  <button className="btn sm-btn" onClick={() => run(
-                    () => api.adminUpdateUser(u.id, { active: !(u.active === 1 || u.active === true) }),
-                    `${u.username} ${(u.active === 1 || u.active === true) ? "disabled" : "enabled"}`)}>
-                    {(u.active === 1 || u.active === true) ? "active" : "disabled"}
-                  </button>
-                </td>
-                <td className="muted">{fmt(u.last_login)}</td>
-                <td style={{ textAlign: "right" }}>
-                  <button className="btn sm-btn" onClick={() => {
-                    const pw = window.prompt(`New password for ${u.username} (min 8 chars):`);
-                    if (pw) run(() => api.adminResetPassword(u.id, pw), `password reset for ${u.username}`);
-                  }}>Reset password</button>
-                </td>
-              </tr>
-            ))}
+            {users.map((u) => {
+              const self = me?.username === u.username;
+              const active = isActive(u);
+              return (
+                <tr key={u.id}>
+                  <td>{u.username}{self && <span className="muted"> (you)</span>}</td>
+                  <td>
+                    <select className="input sm" value={u.role}
+                      onChange={(e) => run(() => api.adminUpdateUser(u.id, { role: e.target.value }),
+                        `${u.username} → ${e.target.value}`)}>
+                      {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
+                    </select>
+                  </td>
+                  <td>
+                    {active
+                      ? <span className="badge ok">active</span>
+                      : <span className="badge bad">disabled</span>}
+                  </td>
+                  <td className="muted">{fmt(u.last_login)}</td>
+                  <td>
+                    <div className="actions-cell">
+                      {active
+                        ? <button className="btn sm-btn" disabled={self}
+                            title={self ? "You can't disable yourself" : "Disable and log out"}
+                            onClick={() => run(() => api.adminDisableUser(u.id), `${u.username} disabled`)}>Disable</button>
+                        : <button className="btn sm-btn"
+                            onClick={() => run(() => api.adminEnableUser(u.id), `${u.username} enabled`)}>Enable</button>}
+                      <button className="btn sm-btn"
+                        onClick={() => run(() => api.adminForceLogout(u.id), `${u.username} logged out everywhere`)}>Force logout</button>
+                      <button className="btn sm-btn"
+                        onClick={() => {
+                          const pw = window.prompt(`New password for ${u.username} (min 8 chars):`);
+                          if (pw) run(() => api.adminResetPassword(u.id, pw), `password reset for ${u.username}`);
+                        }}>Reset password</button>
+                      <button className="btn danger sm-btn" disabled={self}
+                        title={self ? "You can't anonymise yourself" : undefined}
+                        onClick={() => openAnonymise(u)}>Anonymise</button>
+                      <button className="btn danger sm-btn" disabled={self}
+                        title={self ? "You can't delete yourself" : undefined}
+                        onClick={() => openDelete(u)}>Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
 
@@ -157,6 +264,43 @@ export default function AdminPage() {
           <button className="btn primary" disabled={!nt.name}>Create token</button>
         </form>
       </section>
+
+      <section className="panel">
+        <h2>Audit log</h2>
+        {audit.length === 0 ? <p className="muted">No audit events.</p> : (
+          <table className="table">
+            <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Target</th><th>Result</th><th>Source</th></tr></thead>
+            <tbody>
+              {audit.map((a, i) => (
+                <tr key={i}>
+                  <td className="muted">{fmt(a.ts)}</td>
+                  <td>{a.actor ?? "—"}</td>
+                  <td className="mono">{a.action ?? "—"}</td>
+                  <td className="mono">{a.target ?? "—"}{a.reason ? <span className="muted"> · {a.reason}</span> : null}</td>
+                  <td>{a.result === "ok" || a.result == null
+                    ? <span className="badge ok">ok</span>
+                    : <span className="badge bad">{a.result}</span>}</td>
+                  <td className="muted">{a.source ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {dialog && (
+        <ConfirmDialog
+          title={dialog.title}
+          body={dialog.body}
+          confirmLabel={dialog.confirmLabel}
+          danger={dialog.danger}
+          requirePhrase={dialog.requirePhrase}
+          busy={dialogBusy}
+          error={dialogError}
+          onConfirm={confirmRun}
+          onCancel={() => { if (!dialogBusy) { setDialog(null); setDialogError(null); } }}
+        />
+      )}
     </div>
   );
 }

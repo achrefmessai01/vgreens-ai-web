@@ -222,6 +222,16 @@ export interface TokenMeta {
   revoked: number | boolean;
 }
 
+export interface AuditEvent {
+  ts?: string | null;
+  actor?: string | null;
+  action?: string | null;
+  target?: string | null;
+  result?: string | null;
+  reason?: string | null;
+  source?: string | null;
+}
+
 export interface AlertInfo {
   name: string;
   severity: string;
@@ -270,6 +280,14 @@ export const api = {
       "/admin/tokens", { method: "POST", body: JSON.stringify(body) }),
   adminRevokeToken: (id: string) =>
     request<unknown>(`/admin/tokens/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  adminGetUser: (id: number) =>
+    request<AdminUser & { active_sessions: number; active_tokens: number; active_jobs: number }>(`/admin/users/${id}`),
+  adminDisableUser: (id: number) => request<unknown>(`/admin/users/${id}/disable`, { method: "POST" }),
+  adminEnableUser: (id: number) => request<unknown>(`/admin/users/${id}/enable`, { method: "POST" }),
+  adminForceLogout: (id: number) => request<unknown>(`/admin/users/${id}/force-logout`, { method: "POST" }),
+  adminAnonymiseUser: (id: number) => request<unknown>(`/admin/users/${id}/anonymise`, { method: "POST" }),
+  adminDeleteUser: (id: number) => request<unknown>(`/admin/users/${id}`, { method: "DELETE" }),
+  audit: (limit = 50) => request<AuditEvent[]>(`/audit?limit=${limit}`),
 
   health: () => request<Health>("/health/ready"),
   version: () => request<Version>("/version"),
