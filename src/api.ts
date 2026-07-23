@@ -148,6 +148,7 @@ export interface CreateJobBody {
   tenant?: string;
   config_path?: string;
   priority?: number;
+  gpu_count?: number;
 }
 
 export interface DatasetSummary {
