@@ -70,7 +70,7 @@ export default function MonitoringPage() {
         </span>
       </div>
 
-      <div className="row" style={{ flexWrap: "wrap", gap: 10 }}>
+      <div className="tiles">
         <Tile label="NAS" value={s.nas_mounted ? "mounted" : "down"} tone={nasTone} />
         <Tile label="Workers online" value={`${s.workers.online}/${s.workers.total}`} tone={workersTone} />
         <Tile label="Queued jobs" value={String(s.queued_total)} tone={s.queued_total > 20 ? "run" : "neutral"} />
@@ -101,7 +101,7 @@ export default function MonitoringPage() {
       )}
 
       <h3 style={{ marginTop: 20 }}>GPUs</h3>
-      <div className="row" style={{ flexWrap: "wrap", gap: 10 }}>
+      <div className="tiles">
         {s.gpus.length === 0 ? <div className="card neutral">No GPU data.</div> : s.gpus.map((g) => (
           <div key={g.index} className="card" style={{ minWidth: 200, flex: "1 1 200px" }}>
             <div style={{ fontWeight: 600 }}>GPU {g.index} · {g.name}</div>
