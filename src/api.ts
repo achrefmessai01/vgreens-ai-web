@@ -254,6 +254,15 @@ export interface SystemOverview {
   alerts: { available: boolean; firing: { critical: number; warning: number }; list: AlertInfo[] };
 }
 
+export type TimeseriesRange = "1h" | "6h" | "24h";
+export interface Timeseries {
+  range: string;
+  step: number;
+  available: boolean;
+  // each series is an array of [unix_seconds, value|null]
+  series: Record<string, [number, number | null][]>;
+}
+
 export const api = {
   // auth (session cookie)
   me: () => request<{ username: string; role: string; via?: string }>("/auth/me"),
@@ -296,6 +305,8 @@ export const api = {
   gpus: () => request<Gpu[]>("/gpus"),
   systemOverview: () => request<SystemOverview>("/system/overview"),
   systemAlerts: () => request<{ available: boolean; alerts: AlertInfo[] }>("/system/alerts"),
+  systemTimeseries: (range: TimeseriesRange = "1h") =>
+    request<Timeseries>(`/system/timeseries?range=${range}`),
   probe: () => request<Version>("/version"),
 
   jobs: (limit = 10) => request<Job[]>(`/jobs?limit=${limit}`),

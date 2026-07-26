@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type SystemOverview } from "../api";
+import { api, ApiError, type SystemOverview, type Worker } from "../api";
 import { handleAuthLost } from "../auth";
+import { PageHeader } from "../ui";
+import Trends from "../components/Trends";
+import StatusBadge from "../components/StatusBadge";
+import { fmt } from "../lib/format";
 
 function secs(n: number | null | undefined): string {
   if (n == null) return "—";
@@ -31,12 +35,15 @@ function Tile({ label, value, tone }: { label: string; value: string; tone: stri
 
 export default function MonitoringPage() {
   const [s, setS] = useState<SystemOverview | null>(null);
+  const [workers, setWorkers] = useState<Worker[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [updated, setUpdated] = useState<Date | null>(null);
 
   const load = useCallback(async () => {
     try {
-      setS(await api.systemOverview());
+      const [ov, w] = await Promise.all([api.systemOverview(), api.workers().catch(() => [])]);
+      setS(ov);
+      setWorkers(w);
       setError(null);
       setUpdated(new Date());
     } catch (e) {
@@ -63,12 +70,13 @@ export default function MonitoringPage() {
 
   return (
     <div>
-      <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
-        <h2>Monitoring</h2>
-        <span className="muted" style={{ fontSize: 12 }}>
+      <PageHeader
+        title="Monitoring"
+        description="Live platform health, trends, and infrastructure."
+        actions={<span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>
           {updated ? `updated ${updated.toLocaleTimeString()}` : ""} · auto-refresh 15s
-        </span>
-      </div>
+        </span>}
+      />
 
       <div className="tiles">
         <Tile label="NAS" value={s.nas_mounted ? "mounted" : "down"} tone={nasTone} />
@@ -78,6 +86,8 @@ export default function MonitoringPage() {
         <Tile label="Backup age" value={secs(s.backups.age_seconds)} tone={backupTone} />
         <Tile label="Alerts firing" value={alertsAvail ? `${crit} crit / ${warn} warn` : "unknown"} tone={!alertsAvail ? "neutral" : crit > 0 ? "bad" : warn > 0 ? "run" : "ok"} />
       </div>
+
+      <div style={{ marginTop: 20 }}><Trends /></div>
 
       <h3 style={{ marginTop: 20 }}>Active alerts</h3>
       {!alertsAvail ? (
@@ -112,6 +122,26 @@ export default function MonitoringPage() {
           </div>
         ))}
       </div>
+
+      <h3 style={{ marginTop: 20 }}>Workers</h3>
+      {workers.length === 0 ? (
+        <div className="card neutral">No workers registered.</div>
+      ) : (
+        <table className="table">
+          <thead><tr><th>Worker</th><th>Status</th><th>Current job</th><th>Last seen</th><th>Heartbeat age</th></tr></thead>
+          <tbody>
+            {workers.map((w) => (
+              <tr key={w.name}>
+                <td className="mono">{w.name}</td>
+                <td><StatusBadge status={w.online ? "online" : "offline"} /></td>
+                <td className="mono">{w.current_job ?? "—"}</td>
+                <td className="muted">{fmt(w.last_seen)}</td>
+                <td className="muted">{secs(w.seconds_since_heartbeat)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       <h3 style={{ marginTop: 20 }}>Queues</h3>
       <table className="table">
