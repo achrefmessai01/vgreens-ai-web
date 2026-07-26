@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, useEffect, useState } from "react";
 import { HashRouter, Routes, Route } from "react-router-dom";
 import { api } from "./api";
 import type { AuthUser } from "./auth";
@@ -6,18 +6,21 @@ import { AuthContext } from "./AuthContext";
 import Layout from "./components/Layout";
 import Login from "./components/Login";
 import Dashboard from "./components/Dashboard";
-import JobsPage from "./pages/JobsPage";
-import JobDetailPage from "./pages/JobDetailPage";
-import SubmitPage from "./pages/SubmitPage";
-import ModelsPage from "./pages/ModelsPage";
-import ModelDetailPage from "./pages/ModelDetailPage";
-import OnboardModelPage from "./pages/OnboardModelPage";
-import DatasetsPage from "./pages/DatasetsPage";
-import DatasetDetailPage from "./pages/DatasetDetailPage";
-import DatasetImportPage from "./pages/DatasetImportPage";
-import DatasetImportDetailPage from "./pages/DatasetImportDetailPage";
-import AdminPage from "./pages/AdminPage";
-import MonitoringPage from "./pages/MonitoringPage";
+
+// Route-level code splitting: each page is its own chunk, so the heavy
+// Monitoring page (Recharts) is only fetched when a user opens it.
+const JobsPage = lazy(() => import("./pages/JobsPage"));
+const JobDetailPage = lazy(() => import("./pages/JobDetailPage"));
+const SubmitPage = lazy(() => import("./pages/SubmitPage"));
+const ModelsPage = lazy(() => import("./pages/ModelsPage"));
+const ModelDetailPage = lazy(() => import("./pages/ModelDetailPage"));
+const OnboardModelPage = lazy(() => import("./pages/OnboardModelPage"));
+const DatasetsPage = lazy(() => import("./pages/DatasetsPage"));
+const DatasetDetailPage = lazy(() => import("./pages/DatasetDetailPage"));
+const DatasetImportPage = lazy(() => import("./pages/DatasetImportPage"));
+const DatasetImportDetailPage = lazy(() => import("./pages/DatasetImportDetailPage"));
+const AdminPage = lazy(() => import("./pages/AdminPage"));
+const MonitoringPage = lazy(() => import("./pages/MonitoringPage"));
 
 export default function App() {
   // undefined = still checking the session; null = logged out; object = logged in

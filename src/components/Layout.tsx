@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { api } from "../api";
 import { roleAtLeast } from "../auth";
@@ -46,29 +46,32 @@ export default function Layout() {
 
   return (
     <div className={`shell ${collapsed ? "collapsed" : ""}`}>
+      <a href="#main" className="skip-link">Skip to content</a>
       <aside className="sidebar">
         <div className="brand"><span className="dot" /><span className="brand-txt">vGreens AI</span></div>
 
-        <Group label="Platform">
-          <Side to="/" icon="◧" text="Overview" end />
-          <Side to="/jobs" icon="▤" text="Jobs" />
-          <Side to="/datasets" icon="▦" text="Datasets" />
-          <Side to="/models" icon="◈" text="Models" />
-        </Group>
+        <nav aria-label="Primary">
+          <Group label="Platform">
+            <Side to="/" icon="◧" text="Overview" end />
+            <Side to="/jobs" icon="▤" text="Jobs" />
+            <Side to="/datasets" icon="▦" text="Datasets" />
+            <Side to="/models" icon="◈" text="Models" />
+          </Group>
 
-        <Group label="Operations">
-          <Side to="/monitoring" icon="◔" text="Monitoring" />
-          {roleAtLeast(user?.role, "operator") && <Side to="/submit" icon="＋" text="Submit job" />}
-        </Group>
+          <Group label="Operations">
+            <Side to="/monitoring" icon="◔" text="Monitoring" />
+            {roleAtLeast(user?.role, "operator") && <Side to="/submit" icon="＋" text="Submit job" />}
+          </Group>
 
-        {roleAtLeast(user?.role, "admin") && (
-          <Group label="Administration"><Side to="/admin" icon="⚙" text="Admin" /></Group>
-        )}
+          {roleAtLeast(user?.role, "admin") && (
+            <Group label="Administration"><Side to="/admin" icon="⚙" text="Admin" /></Group>
+          )}
+        </nav>
 
         <div style={{ flex: 1 }} />
         <button className="side-link" onClick={() => setCollapsed((c) => !c)}
                 style={{ border: "none", background: "none", cursor: "pointer", width: "100%" }}
-                aria-label="Collapse sidebar">
+                aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed}>
           <span className="side-ic">{collapsed ? "»" : "«"}</span><span className="side-txt">Collapse</span>
         </button>
       </aside>
@@ -76,10 +79,11 @@ export default function Layout() {
       <div>
         <header className="app-header">
           <div className="crumbs"><span className="cur">{title}</span></div>
-          <span className="health-pill" title="Platform health">
+          <span className="health-pill" title="Platform health" role="status" aria-live="polite">
             <span className={`hdot ${health.tone}`} />{health.label}
           </span>
-          <button className="theme-toggle" onClick={toggle} aria-label="Toggle theme"
+          <button className="theme-toggle" onClick={toggle}
+                  aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
                   title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
             {theme === "dark" ? "☀ Light" : "☾ Dark"}
           </button>
@@ -87,7 +91,11 @@ export default function Layout() {
           <span className="badge info">{user?.role}</span>
           <button className="btn ghost" onClick={signOut}>Sign out</button>
         </header>
-        <main className="content"><Outlet /></main>
+        <main className="content" id="main" tabIndex={-1}>
+          <Suspense fallback={<p className="muted">Loading…</p>}>
+            <Outlet />
+          </Suspense>
+        </main>
       </div>
     </div>
   );
