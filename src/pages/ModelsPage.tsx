@@ -34,7 +34,12 @@ export default function ModelsPage() {
       <PageHeader
         title="Models"
         description="Registered models and their promoted (active) versions."
-        actions={<button className="btn ghost" onClick={load} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button>}
+        actions={
+          <>
+            <button className="btn ghost" onClick={load} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button>
+            <button className="btn primary" onClick={() => navigate("/models/onboard")}>Onboard model</button>
+          </>
+        }
       />
 
       {error && <div className="error-box wide">{error}</div>}

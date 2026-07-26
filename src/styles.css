@@ -149,6 +149,9 @@ body {
 
 .panel-head { display: flex; align-items: baseline; justify-content: space-between; }
 .panel-head h2 { margin: 0 0 12px; }
+.code-block { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px;
+  font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap;
+  word-break: break-word; margin: 0; overflow-x: auto; color: var(--text); }
 
 .row-link { cursor: pointer; }
 .row-link:hover td { background: var(--panel-2); }

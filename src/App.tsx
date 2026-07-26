@@ -11,6 +11,7 @@ import JobDetailPage from "./pages/JobDetailPage";
 import SubmitPage from "./pages/SubmitPage";
 import ModelsPage from "./pages/ModelsPage";
 import ModelDetailPage from "./pages/ModelDetailPage";
+import OnboardModelPage from "./pages/OnboardModelPage";
 import DatasetsPage from "./pages/DatasetsPage";
 import DatasetDetailPage from "./pages/DatasetDetailPage";
 import DatasetImportPage from "./pages/DatasetImportPage";
@@ -48,6 +49,7 @@ export default function App() {
             <Route path="jobs/:id" element={<JobDetailPage />} />
             <Route path="submit" element={<SubmitPage />} />
             <Route path="models" element={<ModelsPage />} />
+            <Route path="models/onboard" element={<OnboardModelPage />} />
             <Route path="models/:model" element={<ModelDetailPage />} />
             <Route path="datasets" element={<DatasetsPage />} />
             <Route path="datasets/new" element={<DatasetImportPage />} />
