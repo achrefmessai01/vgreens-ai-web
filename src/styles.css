@@ -186,6 +186,7 @@ body {
 /* form */
 .form { max-width: 560px; display: flex; flex-direction: column; gap: 16px; }
 .form-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.form-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
 .field { display: flex; flex-direction: column; gap: 5px; }
 .field-label { font-size: 13px; color: var(--text); }
 .field-hint { font-size: 12px; }

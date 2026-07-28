@@ -29,6 +29,9 @@ export default function OnboardModelPage() {
   const [dsName, setDsName] = useState("");
   const [dsVer, setDsVer] = useState("v1");
   const [gpu, setGpu] = useState(1);
+  const [epochs, setEpochs] = useState("50");
+  const [imageSize, setImageSize] = useState("640");
+  const [batchSize, setBatchSize] = useState("16");
   const [metric, setMetric] = useState("mAP50");
   const [bar, setBar] = useState("");
   const [ns, setNs] = useState("vgreens-models");
@@ -55,9 +58,9 @@ export default function OnboardModelPage() {
       `  name: ${slug(dsName) || "your_dataset"}`,
       `  version: ${dsVer.trim() || "v1"}`,
       "training:",
-      "  epochs: 50",
-      "  image_size: 640",
-      "  batch_size: 16",
+      `  epochs: ${Number(epochs) || 50}`,
+      `  image_size: ${Number(imageSize) || 640}`,
+      `  batch_size: ${Number(batchSize) || 16}`,
       `  gpu_count: ${gpu}`,
       "validation:",
       thresholdsBlock,
@@ -68,7 +71,7 @@ export default function OnboardModelPage() {
       `  name: ${repo}`,
       "",
     ].join("\n");
-  }, [mName, task, owner, preset, dsName, dsVer, gpu, metric, bar, ns, repo]);
+  }, [mName, task, owner, preset, dsName, dsVer, gpu, epochs, imageSize, batchSize, metric, bar, ns, repo]);
 
   const commands = useMemo(() => [
     "# 1 — save the spec below as model.yaml, then scaffold + create the GitLab repo",
@@ -164,6 +167,18 @@ export default function OnboardModelPage() {
             </Field>
             <Field label="GitLab namespace">
               <input className="input" value={ns} onChange={(e) => setNs(e.target.value)} />
+            </Field>
+          </div>
+
+          <div className="form-3">
+            <Field label="Epochs" hint="Lower = faster (e.g. 3 for a quick run).">
+              <input className="input" type="number" min="1" value={epochs} onChange={(e) => setEpochs(e.target.value)} />
+            </Field>
+            <Field label="Image size" hint="Smaller = faster (e.g. 320).">
+              <input className="input" type="number" min="32" step="32" value={imageSize} onChange={(e) => setImageSize(e.target.value)} />
+            </Field>
+            <Field label="Batch size">
+              <input className="input" type="number" min="1" value={batchSize} onChange={(e) => setBatchSize(e.target.value)} />
             </Field>
           </div>
 

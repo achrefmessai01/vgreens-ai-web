@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api, ApiError, type Job, type JobEvent } from "../api";
+import { api, ApiError, type Job, type JobEvent, type JobResult, type JobLogs } from "../api";
 import { handleAuthLost } from "../auth";
 import StatusBadge from "../components/StatusBadge";
-import { duration, fmt } from "../lib/format";
+import { duration, fmt, fmtBytes } from "../lib/format";
 
 const ACTIVE = ["queued", "running"];
 
@@ -11,22 +11,34 @@ export default function JobDetailPage() {
   const { id = "" } = useParams();
   const [job, setJob] = useState<Job | null>(null);
   const [events, setEvents] = useState<JobEvent[]>([]);
+  const [result, setResult] = useState<JobResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const [logs, setLogs] = useState<JobLogs | null>(null);
+  const [showLogs, setShowLogs] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [j, ev] = await Promise.allSettled([api.jobDetail(id), api.jobEvents(id)]);
+      const [j, ev, r] = await Promise.allSettled([
+        api.jobDetail(id),
+        api.jobEvents(id),
+        api.jobResult(id),
+      ]);
       if (j.status === "rejected") {
         if (j.reason instanceof ApiError && j.reason.code === "auth") return handleAuthLost();
         throw j.reason;
       }
       setJob(j.value);
       setEvents(ev.status === "fulfilled" ? ev.value : []);
+      setResult(r.status === "fulfilled" ? r.value : null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load job.");
     } finally {
@@ -37,6 +49,30 @@ export default function JobDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function copyId() {
+    try {
+      await navigator.clipboard.writeText(id);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1200);
+    } catch {
+      /* clipboard unavailable — ignore */
+    }
+  }
+
+  async function loadLogs() {
+    setShowLogs(true);
+    setLogsLoading(true);
+    setLogsError(null);
+    try {
+      setLogs(await api.jobLogs(id));
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "auth") return handleAuthLost();
+      setLogsError(e instanceof Error ? e.message : "Failed to load logs.");
+    } finally {
+      setLogsLoading(false);
+    }
+  }
 
   async function cancel() {
     if (!window.confirm(`Cancel job ${id}? This asks the worker to stop.`)) return;
@@ -61,7 +97,12 @@ export default function JobDetailPage() {
       <div className="dash-head">
         <div>
           <Link to="/jobs" className="link">← Jobs</Link>
-          <h1 className="mono" style={{ marginTop: 4 }}>{id}</h1>
+          <div className="row" style={{ gap: 8, alignItems: "center", marginTop: 4 }}>
+            <h1 className="mono" style={{ margin: 0 }}>{id}</h1>
+            <button className="btn ghost sm-btn" onClick={copyId} title="Copy job id">
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
         </div>
         <div className="dash-meta">
           {canCancel && (
@@ -98,6 +139,90 @@ export default function JobDetailPage() {
             </div>
           </section>
 
+          {result && (result.available || job.status === "succeeded") && (
+            <section className="panel">
+              <h2>Results</h2>
+
+              {job.job_type === "training" && result.metrics && (
+                <>
+                  <table className="table">
+                    <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+                    <tbody>
+                      {Object.entries(result.metrics).map(([k, v]) => (
+                        <tr key={k}>
+                          <td>{k}</td>
+                          <td className="mono">{typeof v === "number" ? Number(v.toFixed(4)) : v}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {result.result_version && (
+                    <div className="kv" style={{ marginTop: 12 }}>
+                      <Row k="Registered version" v={
+                        job.model_name
+                          ? <Link className="link mono" to={`/models/${job.model_name}`}>{result.result_version}</Link>
+                          : <span className="mono">{result.result_version}</span>
+                      } />
+                    </div>
+                  )}
+                </>
+              )}
+
+              {job.job_type === "processing" && result.report && (
+                <>
+                  <div className="kv">
+                    <Row k="Images" v={String(result.report.images ?? "—")} />
+                    <Row k="Total detections" v={String(result.report.total_detections ?? "—")} />
+                    <Row k="Conf threshold" v={String(result.report.conf_threshold ?? "—")} />
+                  </div>
+                  {isRecord(result.report.by_class) && Object.keys(result.report.by_class).length > 0 && (
+                    <table className="table" style={{ marginTop: 12 }}>
+                      <thead><tr><th>Class</th><th>Detections</th></tr></thead>
+                      <tbody>
+                        {Object.entries(result.report.by_class).map(([k, v]) => (
+                          <tr key={k}><td>{k}</td><td className="mono">{String(v)}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </>
+              )}
+
+              {result.artifacts.length > 0 && (
+                <>
+                  <h3 style={{ margin: "16px 0 8px" }}>Artifacts</h3>
+                  <table className="table">
+                    <thead><tr><th>Path</th><th>Size</th><th></th></tr></thead>
+                    <tbody>
+                      {result.artifacts.map((a) => (
+                        <tr key={a.path}>
+                          <td className="mono">{a.path}</td>
+                          <td className="muted">{fmtBytes(a.size_bytes)}</td>
+                          <td style={{ textAlign: "right" }}>
+                            <a className="link" href={api.artifactDownloadUrl(id, a.path)} download>Download</a>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+
+              <h3 style={{ margin: "16px 0 8px" }}>Logs</h3>
+              {!showLogs ? (
+                <button className="btn ghost sm-btn" onClick={loadLogs}>View logs</button>
+              ) : logsLoading ? (
+                <p className="muted">Loading logs…</p>
+              ) : logsError ? (
+                <div className="error-box">{logsError}</div>
+              ) : logs && logs.available && logs.lines.length > 0 ? (
+                <pre className="code-block">{logs.lines.join("\n")}</pre>
+              ) : (
+                <p className="muted">No logs available.</p>
+              )}
+            </section>
+          )}
+
           <section className="panel">
             <h2>Timeline</h2>
             {events.length === 0 ? (
@@ -124,6 +249,10 @@ export default function JobDetailPage() {
       )}
     </div>
   );
+}
+
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null && !Array.isArray(x);
 }
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {

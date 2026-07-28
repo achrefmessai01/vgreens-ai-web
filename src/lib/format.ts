@@ -16,6 +16,14 @@ export function metricStr(metrics: Record<string, number | string> | undefined):
     .join("  ");
 }
 
+export function fmtBytes(n?: number | null): string {
+  if (n == null || !Number.isFinite(n)) return "—";
+  if (n < 1024) return `${n} B`;
+  const kb = n / 1024;
+  if (kb < 1024) return `${Number(kb.toFixed(1))} KB`;
+  return `${Number((kb / 1024).toFixed(1))} MB`;
+}
+
 export function duration(start?: string | null, end?: string | null): string {
   if (!start || !end) return "—";
   const a = new Date(start).getTime();

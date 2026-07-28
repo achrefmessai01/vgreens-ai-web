@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, ApiError, type ModelSummary, type ModelVersion } from "../api";
 import { handleAuthLost, roleAtLeast } from "../auth";
 import { useAuth } from "../AuthContext";
 import StatusBadge from "../components/StatusBadge";
-import { PageHeader } from "../ui";
+import { PageHeader, ConfirmDialog } from "../ui";
 import { metricStr } from "../lib/format";
 
 type Action =
@@ -13,6 +13,7 @@ type Action =
 
 export default function ModelDetailPage() {
   const { model = "" } = useParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const canManage = roleAtLeast(user?.role, "admin");
 
@@ -28,6 +29,10 @@ export default function ModelDetailPage() {
   const [modalError, setModalError] = useState<string | null>(null);
 
   const [compare, setCompare] = useState<string[]>([]);
+
+  const [deleteStep, setDeleteStep] = useState<null | "confirm" | "force">(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,6 +72,25 @@ export default function ModelDetailPage() {
     }
   }
 
+  async function runDelete(force: boolean) {
+    setDeleteBusy(true); setDeleteError(null);
+    try {
+      await api.deleteModel(model, force);
+      navigate("/models");
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "auth") return handleAuthLost();
+      if (e instanceof ApiError && e.code === "conflict") {
+        // active version — offer the force path
+        setDeleteStep("force");
+        setDeleteError(e.message);
+      } else {
+        setDeleteError(e instanceof Error ? e.message : "Delete failed.");
+      }
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   function toggleCompare(version: string) {
     setCompare((cur) =>
       cur.includes(version) ? cur.filter((v) => v !== version)
@@ -86,6 +110,9 @@ export default function ModelDetailPage() {
           <>
             {canManage && (
               <button className="btn" onClick={openRollback} disabled={loading || !summary?.active_version}>Rollback…</button>
+            )}
+            {canManage && (
+              <button className="btn danger" onClick={() => { setDeleteError(null); setDeleteStep("confirm"); }} disabled={loading}>Delete…</button>
             )}
             <button className="btn ghost" onClick={load} disabled={loading}>{loading ? "…" : "Refresh"}</button>
           </>
@@ -183,6 +210,34 @@ export default function ModelDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {deleteStep === "confirm" && (
+        <ConfirmDialog
+          title={`Delete model ${model}?`}
+          danger
+          requirePhrase={model}
+          busy={deleteBusy}
+          error={deleteError}
+          confirmLabel="Delete"
+          body={<>The model is archived and removed from the registry. If it has an active version the API refuses unless you force it.</>}
+          onConfirm={() => runDelete(false)}
+          onCancel={() => { if (!deleteBusy) { setDeleteStep(null); setDeleteError(null); } }}
+        />
+      )}
+
+      {deleteStep === "force" && (
+        <ConfirmDialog
+          title={`Force delete ${model}?`}
+          danger
+          requirePhrase={model}
+          busy={deleteBusy}
+          error={deleteError}
+          confirmLabel="Force delete"
+          body={<>This model has an active version. Force delete removes it anyway — processing that relies on it will stop serving.</>}
+          onConfirm={() => runDelete(true)}
+          onCancel={() => { if (!deleteBusy) { setDeleteStep(null); setDeleteError(null); } }}
+        />
       )}
     </div>
   );

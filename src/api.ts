@@ -67,9 +67,35 @@ export interface Job {
   docker_image?: string | null;
   config_path?: string | null;
   error?: string | null;
+  output_path?: string | null;
+  result_version?: string | null;
   created_at?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
+}
+
+export interface JobArtifact {
+  path: string;
+  size_bytes: number;
+}
+
+export interface JobResult {
+  job_id: string;
+  job_type: "training" | "processing";
+  status: string;
+  output_path: string | null;
+  result_version: string | null;
+  available: boolean;
+  metrics: Record<string, number | string> | null;
+  report: Record<string, unknown> | null;
+  evaluation_report_md: string | null;
+  artifacts: JobArtifact[];
+}
+
+export interface JobLogs {
+  available: boolean;
+  lines: string[];
+  total_lines: number;
 }
 
 export interface JobEvent {
@@ -142,7 +168,8 @@ export interface ModelSummary {
 export interface CreateJobBody {
   job_type: "training" | "processing";
   model_name: string;
-  docker_image: string;
+  docker_image?: string;          // optional: API resolves from the model registry when omitted
+  model_version?: string;         // optional explicit model version to reuse the image from
   dataset_name?: string;
   dataset_version?: string;
   tenant?: string;
@@ -346,9 +373,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ to: to || undefined, reason: reason || undefined }),
     }),
+  deleteModel: (model: string, force = false) =>
+    request<{ model: string; deleted: boolean; archived_to: string; was_active: boolean; forced: boolean }>(
+      `/models/${encodeURIComponent(model)}?force=${force}`, { method: "DELETE" }),
 
   jobDetail: (id: string) => request<Job>(`/jobs/${encodeURIComponent(id)}`),
   jobEvents: (id: string) => request<JobEvent[]>(`/jobs/${encodeURIComponent(id)}/events`),
+  jobResult: (id: string) => request<JobResult>(`/jobs/${encodeURIComponent(id)}/result`),
+  jobLogs: (id: string, tail = 200) =>
+    request<JobLogs>(`/jobs/${encodeURIComponent(id)}/logs?tail=${tail}`),
+  // A plain download URL (streamed file) — build an <a href> from this; do NOT fetch as JSON.
+  artifactDownloadUrl: (id: string, path: string) =>
+    `${BASE}/jobs/${encodeURIComponent(id)}/artifacts/download?path=${encodeURIComponent(path)}`,
   cancelJob: (id: string) =>
     request<unknown>(`/jobs/${encodeURIComponent(id)}/cancel`, { method: "POST" }),
 

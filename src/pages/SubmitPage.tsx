@@ -40,15 +40,18 @@ export default function SubmitPage() {
   useEffect(() => { if (jobType !== "training") setGpuCount(1); }, [jobType]);
 
   const trainingNeedsDataset = jobType === "training" && !dsName.trim();
-  const valid = !!model.trim() && !!image.trim() && !trainingNeedsDataset;
+  // Version may be left blank — the API resolves the latest frozen version.
+  const valid = !!model.trim() && !trainingNeedsDataset;
 
   const body = useMemo<CreateJobBody>(() => {
     const b: CreateJobBody = {
       job_type: jobType,
       model_name: model.trim(),
-      docker_image: image.trim(),
       priority: Number(priority) || 0,
     };
+    // Optional: only send an image if typed. Blank -> the API resolves it from
+    // the model registry (training: latest version; processing: active version).
+    if (image.trim()) b.docker_image = image.trim();
     if (dsName.trim()) b.dataset_name = dsName.trim();
     if (dsVer.trim()) b.dataset_version = dsVer.trim();
     if (tenant.trim()) b.tenant = tenant.trim();
@@ -99,9 +102,9 @@ export default function SubmitPage() {
           </datalist>
         </Field>
 
-        <Field label="Docker image" required hint="Image implementing the job contract (usually from CI).">
+        <Field label="Docker image" hint="Optional — leave blank to reuse the model's registry image (training: latest version; processing: active version). Set only to override.">
           <input className="input" value={image} onChange={(e) => setImage(e.target.value)}
-            placeholder="e.g. registry.vgreens.lan/vgreens-models/strawberry:v3" />
+            placeholder="auto (from model registry) — or override, e.g. registry.vgreens.lan/vgreens-models/strawberry:v3" />
         </Field>
 
         <div className="form-2">
@@ -181,7 +184,7 @@ export default function SubmitPage() {
               <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px", marginBottom: 8 }}>
                 <b>Type</b><span>{jobType}</span>
                 <b>Model</b><span className="mono">{body.model_name}</span>
-                <b>Image</b><span className="mono" style={{ wordBreak: "break-all" }}>{body.docker_image}</span>
+                <b>Image</b><span className="mono" style={{ wordBreak: "break-all" }}>{body.docker_image || "auto (from model registry)"}</span>
                 {body.dataset_name && <><b>Dataset</b><span className="mono">{body.dataset_name}{body.dataset_version ? `:${body.dataset_version}` : ""}</span></>}
                 {jobType === "training" && <><b>GPUs</b><span>{gpuCount}</span></>}
               </div>

@@ -10,6 +10,7 @@ export default function ModelsPage() {
   const [loading, setLoading] = useState(true);
   const [firstLoad, setFirstLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [q, setQ] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -29,6 +30,8 @@ export default function ModelsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  const filtered = models.filter((m) => m.model.toLowerCase().includes(q.trim().toLowerCase()));
+
   return (
     <div>
       <PageHeader
@@ -44,6 +47,16 @@ export default function ModelsPage() {
 
       {error && <div className="error-box wide">{error}</div>}
 
+      {!firstLoad && models.length > 0 && (
+        <div className="filters">
+          <label>
+            Model
+            <input className="input sm" placeholder="filter by name" value={q}
+              onChange={(e) => setQ(e.target.value)} />
+          </label>
+        </div>
+      )}
+
       <section className="panel">
         {firstLoad ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -53,11 +66,15 @@ export default function ModelsPage() {
           <EmptyState title="No models registered">
             <p className="muted">Models appear here after a training job produces a validated version.</p>
           </EmptyState>
+        ) : filtered.length === 0 ? (
+          <EmptyState title="No models match">
+            <p className="muted">No model name contains “{q.trim()}”.</p>
+          </EmptyState>
         ) : (
           <table className="table">
             <thead><tr><th>Model</th><th>Active version</th><th>Versions</th></tr></thead>
             <tbody>
-              {models.map((m) => (
+              {filtered.map((m) => (
                 <tr key={m.model} className="row-link" onClick={() => navigate(`/models/${m.model}`)}>
                   <td>{m.model}</td>
                   <td>{m.active_version
