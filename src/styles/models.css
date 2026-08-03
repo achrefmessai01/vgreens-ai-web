@@ -1,0 +1,82 @@
+/* ---- Models pages (Phase 2) --------------------------------------------
+   Page-scoped styles for ModelsPage / ModelDetailPage / OnboardModelPage.
+   Uses existing semantic tokens only; do not duplicate global rules. */
+
+/* ---- detail: identity + active-version banner ---- */
+.model-banner {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-4);
+  background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent);
+  border-radius: var(--radius); padding: var(--space-4) var(--space-5); margin-bottom: 16px;
+}
+.model-banner.inactive { border-left-color: var(--warning); }
+.model-banner .mb-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.model-banner .mb-label { color: var(--text-muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .05em; }
+.model-banner .mb-version { font-size: var(--fs-xl); font-weight: 700; display: flex; align-items: center; gap: 10px; }
+.model-banner .mb-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; text-align: right; }
+.model-banner .mb-count { font-size: var(--fs-2xl); font-weight: 700; line-height: 1; }
+
+.metric-chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.metric-chip {
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 4px 10px; border-radius: 999px;
+  background: var(--surface-subtle); border: 1px solid var(--border); font-size: var(--fs-xs);
+}
+.metric-chip .mc-k { color: var(--text-muted); }
+.metric-chip .mc-v { font-weight: 600; font-family: ui-monospace, Menlo, monospace; }
+
+/* ---- delta indicator (text + shape, colour is enhancement only) ---- */
+.delta { display: inline-flex; align-items: center; gap: 4px; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+.delta .delta-ar { font-size: 10px; line-height: 1; }
+.delta.up { color: var(--success); }
+.delta.down { color: var(--danger); }
+.delta.flat, .delta.na { color: var(--text-muted); }
+
+/* ---- active badge next to a version ---- */
+.active-tag {
+  display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .04em; padding: 2px 8px; border-radius: 999px;
+  background: rgba(53,194,129,.18); color: var(--accent);
+}
+.active-tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+/* ---- versions table tweaks ---- */
+.models-table td.actions-col { text-align: right; width: 1%; white-space: nowrap; }
+.compare-radio { display: inline-flex; align-items: center; justify-content: center; }
+
+/* ---- provenance / lineage ---- */
+.prov-src { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+
+/* ---- promotion history timeline reason ---- */
+.hist-reason { color: var(--text-secondary); font-size: var(--fs-sm); margin-top: 2px; }
+
+/* ---- onboard wizard: stepper ---- */
+.stepper { display: flex; align-items: center; gap: 0; margin: 4px 0 20px; flex-wrap: wrap; }
+.step-btn {
+  display: inline-flex; align-items: center; gap: 10px; background: transparent; border: none;
+  padding: 6px 4px; cursor: pointer; color: var(--text-muted); font: inherit;
+}
+.step-btn:disabled { cursor: default; }
+.step-num {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; flex: none;
+  border: 1.5px solid var(--border); background: var(--surface); color: var(--text-muted);
+  font-size: var(--fs-xs); font-weight: 700; transition: background var(--transition), border-color var(--transition);
+}
+.step-btn.active .step-num { border-color: var(--accent); color: var(--accent); }
+.step-btn.done .step-num { border-color: var(--accent); background: var(--accent); color: var(--primary-fg); }
+.step-label { font-size: var(--fs-sm); }
+.step-btn.active .step-label { color: var(--text-primary); font-weight: 600; }
+.step-btn.done .step-label { color: var(--text-secondary); }
+.step-line { flex: 1 1 24px; min-width: 16px; height: 1.5px; background: var(--border); margin: 0 8px; }
+.step-line.done { background: var(--accent); }
+
+.wizard-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 18px; }
+.wizard-nav .wn-end { display: flex; gap: 10px; }
+
+/* ---- review summary ---- */
+.review-grid { display: grid; grid-template-columns: 160px 1fr; gap: 8px 16px; }
+.review-grid dt { color: var(--text-muted); font-size: var(--fs-sm); }
+.review-grid dd { margin: 0; font-size: var(--fs-sm); }
+
+@media (max-width: 720px) {
+  .model-banner { flex-direction: column; }
+  .model-banner .mb-side { align-items: flex-start; text-align: left; }
+}

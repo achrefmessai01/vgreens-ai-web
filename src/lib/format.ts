@@ -4,6 +4,26 @@ export function fmt(ts?: string | null): string {
   return isNaN(d.getTime()) ? ts : d.toLocaleString();
 }
 
+/** Relative "time ago" label, e.g. "3h ago". Returns "—" when absent. */
+export function relTime(ts?: string | null): string {
+  if (!ts) return "—";
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
+  const secs = Math.round((Date.now() - d.getTime()) / 1000);
+  if (secs < 0) return "just now";
+  if (secs < 45) return "just now";
+  if (secs < 90) return "1 min ago";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins} min ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.round(hrs / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.round(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.round(months / 12)}y ago`;
+}
+
 export function metricStr(metrics: Record<string, number | string> | undefined): string {
   if (!metrics) return "—";
   const keys = Object.keys(metrics);

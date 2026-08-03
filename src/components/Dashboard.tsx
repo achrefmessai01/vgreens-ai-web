@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { api, ApiError, type Gpu, type Job, type Worker, type SystemOverview } from "../api";
+import { useNavigate } from "react-router-dom";
+import { api, ApiError, type Gpu, type Job, type SystemOverview } from "../api";
 import { handleAuthLost, roleAtLeast } from "../auth";
 import { useAuth } from "../AuthContext";
 import StatusBadge from "./StatusBadge";
-import { PageHeader } from "../ui";
+import { MetricCard, MetricCardSkeleton, type MetricStatus } from "./MetricCard";
+import { PageHeader, Button, EmptyState, Skeleton } from "../ui";
 import { fmt } from "../lib/format";
+import "../styles/overview.css";
 
 function age(sec: number | null | undefined): string {
   if (sec == null) return "—";
@@ -15,53 +17,46 @@ function age(sec: number | null | undefined): string {
   return `${Math.round(sec / 86400)}d`;
 }
 
-function HealthTile({ label, value, tone }: { label: string; value: string; tone: string }) {
-  return (
-    <div className="stat">
-      <div className="stat-label">{label}</div>
-      <div style={{ marginTop: 6 }}><span className={`badge ${tone}`} style={{ fontSize: 14 }}>{value}</span></div>
-    </div>
-  );
-}
-
-function Kpi({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <div className="stat">
-      <div className="stat-label">{label}</div>
-      <div className={`stat-value ${tone ?? ""}`}>{value}</div>
-    </div>
-  );
-}
-
 export default function Dashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const canOperate = roleAtLeast(user?.role, "operator");
+
   const [ov, setOv] = useState<SystemOverview | null>(null);
   const [ready, setReady] = useState<boolean | undefined>(undefined);
   const [version, setVersion] = useState<string>("—");
   const [gpus, setGpus] = useState<Gpu[]>([]);
-  const [workers, setWorkers] = useState<Worker[]>([]);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [pendingLicences, setPendingLicences] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [updated, setUpdated] = useState<Date | null>(null);
+  const [partialError, setPartialError] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    const [ver, health, overview, w, g, j] = await Promise.allSettled([
-      api.version(), api.health(), api.systemOverview(), api.workers(), api.gpus(), api.jobs(8),
+    const results = await Promise.allSettled([
+      api.version(),
+      api.health(),
+      api.systemOverview(),
+      api.gpus(),
+      api.jobs(6),
+      api.datasetImports({ state: "awaiting_license_approval", limit: 50 }),
     ]);
-    for (const r of [ver, health, overview, w, g, j]) {
+    const [ver, health, overview, g, j, imports] = results;
+    for (const r of results) {
       if (r.status === "rejected" && r.reason instanceof ApiError && r.reason.status === 401) {
         return handleAuthLost();
       }
     }
     if (ver.status === "fulfilled") setVersion(ver.value.version ?? "—");
-    if (health.status === "fulfilled") setReady(["ok", "ready"].includes((health.value as { status?: string }).status ?? ""));
+    setReady(health.status === "fulfilled"
+      ? ["ok", "ready"].includes((health.value as { status?: string }).status ?? "")
+      : undefined);
     if (overview.status === "fulfilled") setOv(overview.value);
-    if (w.status === "fulfilled") setWorkers(w.value);
     if (g.status === "fulfilled") setGpus(g.value);
     if (j.status === "fulfilled") setJobs(j.value);
+    setPendingLicences(imports.status === "fulfilled" ? imports.value.length : null);
+    setPartialError(overview.status === "rejected");
     setUpdated(new Date());
     setLoading(false);
   }, []);
@@ -72,114 +67,282 @@ export default function Dashboard() {
     return () => clearInterval(t);
   }, [load]);
 
+  const firstLoad = loading && updated === null;
+
+  // ---- derive operational metrics ------------------------------------
   const jbs = ov?.jobs_by_status ?? {};
-  const backupTone = ov?.backups.age_seconds == null ? "neutral"
-    : ov.backups.age_seconds > 172800 ? "bad" : ov.backups.age_seconds > 90000 ? "warning" : "ok";
-  const workersTone = !ov ? "neutral" : ov.workers.online === 0 ? "bad" : ov.workers.online < ov.workers.total ? "warning" : "ok";
+  const metrics = buildMetrics({ ov, ready, version, gpus, pendingLicences });
 
   return (
     <div>
       <PageHeader
-        title="Dashboard"
-        description="Platform health and activity at a glance."
+        title="Overview"
+        description="Operational status of the platform — problems link straight to where you fix them."
+        breadcrumbs={[{ label: "Overview" }]}
         actions={
           <>
-            {updated && <span className="muted" style={{ fontSize: 12, alignSelf: "center" }}>updated {updated.toLocaleTimeString()}</span>}
-            <button className="btn ghost" onClick={load} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button>
+            <span className="ov-meta">
+              {updated ? `Updated ${updated.toLocaleTimeString()}` : "Loading…"}
+            </span>
+            <Button variant="ghost" onClick={load} disabled={loading}>
+              {loading ? "Refreshing…" : "Refresh"}
+            </Button>
           </>
         }
       />
 
-      {/* health strip */}
-      <div className="tiles" style={{ marginBottom: 16 }}>
-        <HealthTile label="API" value={ready === undefined ? "unknown" : ready ? "ready" : "degraded"} tone={ready === undefined ? "neutral" : ready ? "ok" : "bad"} />
-        <HealthTile label="NAS" value={ov ? (ov.nas_mounted ? "mounted" : "down") : "unknown"} tone={!ov ? "neutral" : ov.nas_mounted ? "ok" : "bad"} />
-        <HealthTile label="Workers" value={ov ? `${ov.workers.online}/${ov.workers.total} online` : "unknown"} tone={workersTone} />
-        <HealthTile label="Backup age" value={ov ? age(ov.backups.age_seconds) : "unknown"} tone={backupTone} />
-        <HealthTile label="Alerts" value={ov ? (ov.alerts.available ? `${ov.alerts.firing.critical} crit / ${ov.alerts.firing.warning} warn` : "unknown") : "unknown"}
-          tone={!ov || !ov.alerts.available ? "neutral" : ov.alerts.firing.critical ? "bad" : ov.alerts.firing.warning ? "warning" : "ok"} />
-      </div>
+      {partialError && (
+        <div className="ov-note" role="status">
+          Some metrics could not be refreshed — showing the last values received.
+        </div>
+      )}
 
-      {/* KPIs */}
-      <div className="tiles" style={{ marginBottom: 16 }}>
-        <Kpi label="Queued" value={String(ov?.queued_total ?? 0)} />
-        <Kpi label="Running" value={String(jbs.running ?? 0)} />
-        <Kpi label="Failed (total)" value={String(jbs.failed ?? 0)} tone={jbs.failed ? "bad" : ""} />
-        <Kpi label="Succeeded (total)" value={String(jbs.succeeded ?? 0)} tone="ok" />
-        <Kpi label="GPUs" value={String(gpus.length)} />
-        <Kpi label="Version" value={version} />
+      {/* operational metric cards */}
+      <div className="metric-grid" style={{ marginTop: "var(--space-3)" }}>
+        {firstLoad
+          ? Array.from({ length: 9 }).map((_, i) => <MetricCardSkeleton key={i} />)
+          : metrics.map((m) => <MetricCard key={m.title} {...m} />)}
       </div>
 
       {/* quick actions */}
-      <div className="row" style={{ gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
-        {canOperate && <button className="btn primary" onClick={() => navigate("/submit")}>Submit job</button>}
-        {canOperate && <button className="btn" onClick={() => navigate("/datasets/new")}>Import dataset</button>}
-        <button className="btn" onClick={() => navigate("/monitoring")}>Open monitoring</button>
-        <button className="btn" onClick={() => navigate("/models")}>Review models</button>
-        {!canOperate && <span className="muted" style={{ alignSelf: "center", fontSize: 12 }}>Read-only access — actions require the operator role.</span>}
+      <div className="row" style={{ gap: 8, flexWrap: "wrap", marginTop: "var(--space-5)" }}>
+        {canOperate && <Button variant="primary" onClick={() => navigate("/submit")}>Submit job</Button>}
+        {canOperate && <Button onClick={() => navigate("/datasets/new")}>Import dataset</Button>}
+        <Button onClick={() => navigate("/monitoring")}>Open monitoring</Button>
+        <Button onClick={() => navigate("/models")}>Review models</Button>
+        {!canOperate && (
+          <span className="ov-meta">Read-only access — actions require the operator role.</span>
+        )}
       </div>
 
-      <section className="panel">
-        <h2>GPUs</h2>
-        {gpus.length === 0 ? <p className="muted">No GPU data.</p> : (
-          <table className="table">
-            <thead><tr><th>#</th><th>Name</th><th>Util</th><th>Memory</th><th>Temp</th></tr></thead>
-            <tbody>
-              {gpus.map((g) => (
-                <tr key={g.index}>
-                  <td>{g.index}</td>
-                  <td>{g.name ?? "—"}</td>
-                  <td>{g.utilization_pct != null ? `${g.utilization_pct}%` : "—"}</td>
-                  <td>{g.memory_used_mb != null && g.memory_total_mb != null ? `${g.memory_used_mb} / ${g.memory_total_mb} MB` : "—"}</td>
-                  <td>{g.temperature_c != null ? `${g.temperature_c}°C` : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section className="panel">
-        <h2>Workers</h2>
-        {workers.length === 0 ? <p className="muted">No workers registered.</p> : (
-          <table className="table">
-            <thead><tr><th>Worker</th><th>Status</th><th>Current job</th><th>Last seen</th></tr></thead>
-            <tbody>
-              {workers.map((w) => (
-                <tr key={w.name}>
-                  <td className="mono">{w.name}</td>
-                  <td><StatusBadge status={w.online ? "online" : "offline"} /></td>
-                  <td className="mono">{w.current_job ?? "—"}</td>
-                  <td className="muted">{fmt(w.last_seen)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-
-      <section className="panel">
-        <div className="panel-head">
-          <h2>Recent jobs</h2>
-          <Link to="/jobs" className="link">View all →</Link>
+      {/* recent activity */}
+      <section className="ov-section">
+        <div className="ov-section-head">
+          <h2>Recent activity</h2>
+          <button className="link" onClick={() => navigate("/jobs")}>View all jobs →</button>
         </div>
-        {jobs.length === 0 ? <p className="muted">No jobs yet.</p> : (
-          <table className="table">
-            <thead><tr><th>Job</th><th>Type</th><th>Model</th><th>Status</th><th>Created</th></tr></thead>
-            <tbody>
-              {jobs.map((j) => (
-                <tr key={j.job_id} className="row-link" onClick={() => navigate(`/jobs/${j.job_id}`)}>
-                  <td className="mono">{j.job_id}</td>
-                  <td>{j.job_type}</td>
-                  <td>{j.model_name}</td>
-                  <td><StatusBadge status={j.status} /></td>
-                  <td className="muted">{fmt(j.created_at)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {firstLoad ? (
+          <div className="activity">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <div className="activity-row" key={i} style={{ cursor: "default" }}>
+                <Skeleton width="60%" />
+                <Skeleton width={70} />
+                <Skeleton width={80} />
+              </div>
+            ))}
+          </div>
+        ) : jobs.length === 0 ? (
+          <EmptyState title="No jobs yet">
+            <p className="muted" style={{ marginTop: 4 }}>
+              Submitted jobs will appear here as soon as they are created.
+            </p>
+          </EmptyState>
+        ) : (
+          <div className="activity">
+            {jobs.map((jb) => (
+              <button
+                key={jb.job_id}
+                type="button"
+                className="activity-row"
+                onClick={() => navigate(`/jobs/${jb.job_id}`)}
+              >
+                <div className="activity-main">
+                  <div className="activity-title">{jb.model_name || jb.job_id}</div>
+                  <div className="activity-meta">
+                    {jb.job_type} · <span className="mono">{jb.job_id}</span>
+                  </div>
+                </div>
+                <StatusBadge status={jb.status} />
+                <span className="activity-time">{fmt(jb.created_at)}</span>
+              </button>
+            ))}
+          </div>
+        )}
+        {!firstLoad && Number(jbs.running ?? 0) > 0 && (
+          <p className="ov-meta" style={{ marginTop: 8 }}>
+            {jbs.running} job{Number(jbs.running) === 1 ? "" : "s"} currently running.
+          </p>
         )}
       </section>
     </div>
   );
+}
+
+// --------------------------------------------------------------------------
+// Metric derivation — each card answers one operational question and links to
+// the page where the problem is resolved when it needs attention.
+// --------------------------------------------------------------------------
+type Card = {
+  title: string;
+  value: string;
+  sub?: string;
+  status: MetricStatus;
+  to?: string;
+  linkLabel?: string;
+};
+
+function buildMetrics({ ov, ready, version, gpus, pendingLicences }: {
+  ov: SystemOverview | null;
+  ready: boolean | undefined;
+  version: string;
+  gpus: Gpu[];
+  pendingLicences: number | null;
+}): Card[] {
+  const cards: Card[] = [];
+
+  // 1. Services / API
+  cards.push({
+    title: "Services",
+    value: ready === undefined ? "Unknown" : ready ? "Operational" : "Degraded",
+    sub: `API version ${version}`,
+    status: ready === undefined ? "unknown" : ready ? "ok" : "bad",
+    to: ready === false ? "/monitoring" : undefined,
+    linkLabel: "Investigate",
+  });
+
+  // 2. NAS storage
+  cards.push({
+    title: "NAS storage",
+    value: !ov ? "Unknown" : ov.nas_mounted ? "Mounted" : "Not mounted",
+    sub: !ov ? "Metrics unavailable" : ov.nas_mounted ? "Share reachable" : "Datasets & artifacts at risk",
+    status: !ov ? "unknown" : ov.nas_mounted ? "ok" : "bad",
+    to: ov && !ov.nas_mounted ? "/monitoring" : undefined,
+    linkLabel: "Investigate",
+  });
+
+  // 3. Workers
+  if (!ov) {
+    cards.push({ title: "Workers", value: "Unknown", sub: "Metrics unavailable", status: "unknown" });
+  } else {
+    const { online, total } = ov.workers;
+    const offline = Math.max(0, total - online);
+    const status: MetricStatus = total === 0 ? "unknown" : online === 0 ? "bad" : online < total ? "warn" : "ok";
+    cards.push({
+      title: "Workers",
+      value: total === 0 ? "None registered" : `${online}/${total} online`,
+      sub: total === 0 ? "No workers registered" : offline > 0 ? `${offline} offline` : "All workers healthy",
+      status,
+      to: status === "warn" || status === "bad" ? "/monitoring" : undefined,
+      linkLabel: "View workers",
+    });
+  }
+
+  // 4. GPUs available
+  if (!ov || gpus.length === 0) {
+    cards.push({ title: "GPUs", value: "No GPU data", sub: "Metrics unavailable", status: "unknown" });
+  } else {
+    const known = gpus.filter((g) => g.utilization_pct != null);
+    const idle = known.filter((g) => (g.utilization_pct ?? 100) < 20).length;
+    const busy = known.length - idle;
+    const queued = ov.queued_total;
+    let status: MetricStatus = "ok";
+    let sub = `utilisation unavailable`;
+    if (known.length > 0) {
+      sub = `${idle} idle · ${busy} busy`;
+      status = idle === 0 && queued > 0 ? "warn" : "ok";
+    } else {
+      status = "neutral";
+    }
+    cards.push({
+      title: "GPUs",
+      value: `${gpus.length} present`,
+      sub,
+      status,
+      to: status === "warn" ? "/monitoring" : undefined,
+      linkLabel: "View GPUs",
+    });
+  }
+
+  // 5. Job queue
+  if (!ov) {
+    cards.push({ title: "Job queue", value: "Unknown", sub: "Metrics unavailable", status: "unknown" });
+  } else {
+    const jbs = ov.jobs_by_status ?? {};
+    const running = Number(jbs.running ?? 0);
+    const blocked = Number(jbs.waiting_for_gpu ?? 0) + Number(jbs.waiting_for_two_gpus ?? 0);
+    const oldest = ov.oldest_queued_seconds;
+    const stuck = oldest > 1800 && ov.queued_total > 0;
+    const status: MetricStatus = blocked > 0 || stuck ? "warn" : ov.queued_total === 0 ? "ok" : "neutral";
+    const subParts = [`${running} running`];
+    if (ov.queued_total > 0) subParts.push(`oldest ${age(oldest)}`);
+    if (blocked > 0) subParts.push(`${blocked} blocked on GPU`);
+    cards.push({
+      title: "Job queue",
+      value: `${ov.queued_total} queued`,
+      sub: subParts.join(" · "),
+      status,
+      to: blocked > 0 || stuck ? "/jobs" : undefined,
+      linkLabel: "View jobs",
+    });
+  }
+
+  // 6. Failed jobs
+  if (!ov) {
+    cards.push({ title: "Failed jobs", value: "Unknown", sub: "Metrics unavailable", status: "unknown" });
+  } else {
+    const failed = Number(ov.jobs_by_status?.failed ?? 0);
+    cards.push({
+      title: "Failed jobs",
+      value: String(failed),
+      sub: failed > 0 ? "Review and re-run as needed" : "No failures recorded",
+      status: failed > 0 ? "warn" : "ok",
+      to: failed > 0 ? "/jobs" : undefined,
+      linkLabel: "View failures",
+    });
+  }
+
+  // 7. Backups
+  if (!ov) {
+    cards.push({ title: "Backups", value: "Unknown", sub: "Metrics unavailable", status: "unknown" });
+  } else {
+    const a = ov.backups.age_seconds;
+    const status: MetricStatus = a == null ? "unknown" : a > 172800 ? "bad" : a > 90000 ? "warn" : "ok";
+    cards.push({
+      title: "Backups",
+      value: a == null ? "None found" : `${age(a)} old`,
+      sub: ov.backups.latest ? `latest ${ov.backups.latest}` : `${ov.backups.count} on NAS`,
+      status,
+      to: status === "warn" || status === "bad" ? "/monitoring" : undefined,
+      linkLabel: "Check backups",
+    });
+  }
+
+  // 8. Active alerts
+  if (!ov) {
+    cards.push({ title: "Active alerts", value: "Unknown", sub: "Metrics unavailable", status: "unknown" });
+  } else if (!ov.alerts.available) {
+    cards.push({
+      title: "Active alerts",
+      value: "Unavailable",
+      sub: "Prometheus unreachable",
+      status: "unknown",
+    });
+  } else {
+    const { critical: crit, warning: warn } = ov.alerts.firing;
+    const status: MetricStatus = crit > 0 ? "bad" : warn > 0 ? "warn" : "ok";
+    cards.push({
+      title: "Active alerts",
+      value: crit > 0 || warn > 0 ? `${crit} crit · ${warn} warn` : "None firing",
+      sub: crit > 0 || warn > 0 ? "Firing alerts need attention" : "All clear",
+      status,
+      to: crit > 0 || warn > 0 ? "/monitoring" : undefined,
+      linkLabel: "View alerts",
+    });
+  }
+
+  // 9. Licence approvals (dataset imports awaiting sign-off)
+  if (pendingLicences == null) {
+    cards.push({ title: "Licence approvals", value: "Unknown", sub: "Could not load imports", status: "unknown" });
+  } else {
+    cards.push({
+      title: "Licence approvals",
+      value: String(pendingLicences),
+      sub: pendingLicences > 0 ? "Dataset imports awaiting approval" : "Nothing awaiting approval",
+      status: pendingLicences > 0 ? "warn" : "ok",
+      to: pendingLicences > 0 ? "/datasets" : undefined,
+      linkLabel: "Review imports",
+    });
+  }
+
+  return cards;
 }

@@ -1,0 +1,128 @@
+/* ============================================================================
+   Datasets pages — scoped styles (Phase 2 redesign).
+   Only used by the four Datasets pages. Reuses design tokens from styles.css.
+   All classes are prefixed `ds-` to avoid collisions with shared styles.
+   ========================================================================== */
+
+/* ---- shared bits --------------------------------------------------------- */
+.ds-result-count { color: var(--muted); font-size: var(--fs-sm); }
+.ds-name-link { color: var(--text); font-weight: 600; text-decoration: none; }
+.ds-name-link:hover { color: var(--accent); text-decoration: underline; }
+.ds-skel-rows { display: flex; flex-direction: column; gap: 10px; }
+.ds-mono-wrap { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12.5px; word-break: break-all; }
+
+/* An informational callout — text + icon + colour (never colour alone). */
+.ds-callout {
+  display: flex; gap: 12px; align-items: flex-start;
+  border: 1px solid var(--border); border-left-width: 4px;
+  background: var(--surface-subtle); border-radius: var(--radius);
+  padding: 12px 14px; margin-bottom: 16px;
+}
+.ds-callout .ds-callout-ic { flex: none; margin-top: 1px; display: inline-grid; place-items: center; }
+.ds-callout h3 { margin: 0 0 4px; font-size: var(--fs-md); }
+.ds-callout p { margin: 0; font-size: var(--fs-sm); color: var(--text-secondary); line-height: 1.5; }
+.ds-callout.tone-info { border-left-color: var(--info); }
+.ds-callout.tone-info .ds-callout-ic { color: var(--info); }
+.ds-callout.tone-warning { border-left-color: var(--warning); }
+.ds-callout.tone-warning .ds-callout-ic { color: var(--warning); }
+.ds-callout.tone-success { border-left-color: var(--success); }
+.ds-callout.tone-success .ds-callout-ic { color: var(--success); }
+.ds-callout.tone-danger { border-left-color: var(--danger); }
+.ds-callout.tone-danger .ds-callout-ic { color: var(--danger); }
+
+.ds-facts { display: flex; flex-wrap: wrap; gap: 6px 20px; margin-top: 8px; }
+.ds-fact { font-size: var(--fs-sm); }
+.ds-fact .ds-fact-k { color: var(--muted); }
+.ds-fact .ds-fact-v { color: var(--text); font-weight: 600; }
+
+/* ---- dataset detail: version summary cards ------------------------------ */
+.ds-ver-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; margin-bottom: 14px; background: var(--surface); }
+.ds-ver-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.ds-ver-title { display: flex; align-items: center; gap: 10px; }
+.ds-ver-title h3 { margin: 0; font-size: var(--fs-lg); font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+
+.ds-kv-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px 24px; }
+.ds-kv { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ds-kv-k { color: var(--muted); font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; }
+.ds-kv-v { font-size: var(--fs-sm); word-break: break-word; }
+
+.ds-classdist { margin-top: 16px; }
+.ds-classdist-title { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 8px; }
+.ds-classdist-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.ds-classrow { display: grid; grid-template-columns: 160px 1fr auto; align-items: center; gap: 10px; font-size: var(--fs-sm); }
+.ds-classrow .ds-class-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ds-classrow .ds-class-bar { height: 8px; border-radius: 999px; background: var(--surface-subtle); overflow: hidden; }
+.ds-classrow .ds-class-fill { height: 100%; background: var(--accent); border-radius: 999px; }
+.ds-classrow .ds-class-n { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Expandable raw manifest (collapsed by default) */
+.ds-raw { margin-top: 16px; border-top: 1px solid var(--border); padding-top: 12px; }
+.ds-raw > summary { cursor: pointer; font-size: var(--fs-sm); color: var(--text-secondary); font-weight: 600; list-style: none; display: inline-flex; align-items: center; gap: 8px; }
+.ds-raw > summary::-webkit-details-marker { display: none; }
+.ds-raw > summary::before { content: "▸"; color: var(--muted); transition: transform var(--transition); display: inline-block; }
+.ds-raw[open] > summary::before { transform: rotate(90deg); }
+.ds-raw pre { margin: 12px 0 0; max-height: 360px; overflow: auto; }
+@media (prefers-reduced-motion: reduce) { .ds-raw > summary::before { transition: none; } }
+
+/* ---- import lifecycle stepper (detail page) ----------------------------- */
+.ds-stepper { list-style: none; margin: 0; padding: 0; }
+.ds-step { display: flex; gap: 14px; position: relative; padding-bottom: 18px; }
+.ds-step:last-child { padding-bottom: 0; }
+/* connector line between nodes */
+.ds-step:not(:last-child)::before {
+  content: ""; position: absolute; left: 13px; top: 26px; bottom: 0; width: 2px; background: var(--border);
+}
+.ds-step.is-done:not(:last-child)::before { background: var(--green-dim); }
+
+.ds-step-node {
+  flex: none; width: 28px; height: 28px; border-radius: 50%;
+  display: grid; place-items: center; border: 2px solid var(--border);
+  background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 700; z-index: 1;
+}
+.ds-step.is-done .ds-step-node { background: var(--green-dim); border-color: var(--green-dim); color: #fff; }
+.ds-step.is-current .ds-step-node { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 0 3px rgba(53,194,129,.20); }
+.ds-step.is-error .ds-step-node { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+.ds-step-body { flex: 1; padding-top: 2px; min-width: 0; }
+.ds-step-label { display: flex; align-items: center; gap: 8px; font-size: var(--fs-md); font-weight: 600; }
+.ds-step.is-pending .ds-step-label { color: var(--muted); font-weight: 500; }
+.ds-step-tag { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; font-weight: 700; padding: 1px 7px; border-radius: 999px; }
+.ds-step.is-current .ds-step-tag { background: rgba(53,194,129,.18); color: var(--accent); }
+.ds-step.is-error .ds-step-tag { background: rgba(224,106,90,.15); color: var(--danger); }
+.ds-step-desc { font-size: var(--fs-sm); color: var(--text-secondary); margin-top: 3px; line-height: 1.5; }
+
+/* subtle pulse on the active node — disabled under reduced motion */
+.ds-step.is-current .ds-step-node { animation: ds-pulse 1.8s ease-in-out infinite; }
+@keyframes ds-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(53,194,129,.20); }
+  50% { box-shadow: 0 0 0 5px rgba(53,194,129,.08); }
+}
+@media (prefers-reduced-motion: reduce) { .ds-step.is-current .ds-step-node { animation: none; } }
+
+/* ---- import wizard (new import page) ------------------------------------ */
+.ds-wizard { max-width: 640px; }
+.ds-wiz-steps { list-style: none; display: flex; gap: 6px; margin: 0 0 22px; padding: 0; flex-wrap: wrap; }
+.ds-wiz-steps li { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 130px; }
+.ds-wiz-num {
+  flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center;
+  border: 2px solid var(--border); background: var(--surface); color: var(--muted); font-size: 12px; font-weight: 700;
+}
+.ds-wiz-step.is-done .ds-wiz-num { background: var(--green-dim); border-color: var(--green-dim); color: #fff; }
+.ds-wiz-step.is-current .ds-wiz-num { border-color: var(--accent); color: var(--accent); }
+.ds-wiz-step.is-current .ds-wiz-caption { color: var(--text); font-weight: 600; }
+.ds-wiz-caption { font-size: var(--fs-sm); color: var(--muted); }
+.ds-wiz-line { flex: 1; height: 2px; background: var(--border); min-width: 12px; }
+.ds-wiz-step.is-done .ds-wiz-line { background: var(--green-dim); }
+
+.ds-wiz-panel { display: flex; flex-direction: column; gap: 16px; }
+.ds-wiz-heading { margin: 0; font-size: var(--fs-lg); }
+.ds-wiz-sub { margin: -8px 0 0; color: var(--muted); font-size: var(--fs-sm); }
+.ds-wiz-nav { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; }
+.ds-wiz-nav .ds-wiz-nav-end { display: flex; gap: 10px; }
+
+/* Review step summary */
+.ds-review { border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+.ds-review-row { display: grid; grid-template-columns: 160px 1fr; gap: 16px; padding: 10px 14px; font-size: var(--fs-sm); }
+.ds-review-row:not(:last-child) { border-bottom: 1px solid var(--border); }
+.ds-review-row .ds-review-k { color: var(--muted); }
+.ds-review-row .ds-review-v { word-break: break-word; }

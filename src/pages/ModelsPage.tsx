@@ -1,8 +1,9 @@
+import "../styles/models.css";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, ApiError, type ModelSummary } from "../api";
 import { handleAuthLost } from "../auth";
-import { PageHeader, EmptyState, Skeleton } from "../ui";
+import { PageHeader, EmptyState, Skeleton, Toolbar, SearchInput } from "../ui";
 
 export default function ModelsPage() {
   const navigate = useNavigate();
@@ -35,6 +36,7 @@ export default function ModelsPage() {
   return (
     <div>
       <PageHeader
+        breadcrumbs={[{ label: "Models" }]}
         title="Models"
         description="Registered models and their promoted (active) versions."
         actions={
@@ -45,16 +47,20 @@ export default function ModelsPage() {
         }
       />
 
-      {error && <div className="error-box wide">{error}</div>}
+      {error && <div className="error-box wide" role="alert">{error}</div>}
 
       {!firstLoad && models.length > 0 && (
-        <div className="filters">
-          <label>
-            Model
-            <input className="input sm" placeholder="filter by name" value={q}
-              onChange={(e) => setQ(e.target.value)} />
-          </label>
-        </div>
+        <Toolbar
+          start={
+            <SearchInput value={q} onChange={setQ} label="Filter models"
+              placeholder="Filter by model name…" />
+          }
+          end={
+            <span className="result-count">
+              {filtered.length} of {models.length} model{models.length === 1 ? "" : "s"}
+            </span>
+          }
+        />
       )}
 
       <section className="panel">
@@ -62,23 +68,31 @@ export default function ModelsPage() {
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} height={20} />)}
           </div>
+        ) : error && models.length === 0 ? (
+          <EmptyState title="Couldn’t load models">
+            <p className="muted">{error}</p>
+            <button className="btn" style={{ marginTop: 12 }} onClick={load}>Try again</button>
+          </EmptyState>
         ) : models.length === 0 ? (
-          <EmptyState title="No models registered">
+          <EmptyState title="No models yet">
             <p className="muted">Models appear here after a training job produces a validated version.</p>
+            <button className="btn primary" style={{ marginTop: 12 }} onClick={() => navigate("/models/onboard")}>Onboard a model</button>
           </EmptyState>
         ) : filtered.length === 0 ? (
           <EmptyState title="No models match">
             <p className="muted">No model name contains “{q.trim()}”.</p>
           </EmptyState>
         ) : (
-          <table className="table">
+          <table className="table models-table">
             <thead><tr><th>Model</th><th>Active version</th><th>Versions</th></tr></thead>
             <tbody>
               {filtered.map((m) => (
-                <tr key={m.model} className="row-link" onClick={() => navigate(`/models/${m.model}`)}>
-                  <td>{m.model}</td>
+                <tr key={m.model} className="row-link" onClick={() => navigate(`/models/${m.model}`)}
+                    tabIndex={0} role="link" aria-label={`Open model ${m.model}`}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); navigate(`/models/${m.model}`); } }}>
+                  <td><span className="mono">{m.model}</span></td>
                   <td>{m.active_version
-                    ? <span className="badge ok mono">{m.active_version}</span>
+                    ? <span className="active-tag mono">{m.active_version}</span>
                     : <span className="muted">none</span>}</td>
                   <td className="muted">{m.version_count}</td>
                 </tr>

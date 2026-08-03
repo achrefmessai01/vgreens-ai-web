@@ -1,0 +1,107 @@
+/* ============================================================================
+   Jobs pages (list / detail / submit) — Phase 2 redesign.
+   Scoped, additive styles only. Uses existing design tokens from styles.css.
+   ========================================================================== */
+
+/* ---- shared bits --------------------------------------------------------- */
+.jobs-count { color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; }
+
+/* copy affordance next to a monospace id */
+.id-cell { display: inline-flex; align-items: center; gap: 6px; }
+.copy-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0; border-radius: 6px;
+  border: 1px solid transparent; background: transparent; color: var(--muted);
+  cursor: pointer; flex: none; transition: color var(--transition), border-color var(--transition), background var(--transition);
+}
+.copy-btn:hover { color: var(--text); background: var(--panel-2); border-color: var(--border); }
+.copy-btn:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+
+.cell-actions { width: 40px; text-align: right; }
+.cell-actions .ovm { display: inline-flex; }
+
+/* skeleton table rows that match the real table layout */
+.sk-table { display: flex; flex-direction: column; gap: 12px; padding: 4px 0; }
+.sk-row { display: grid; grid-template-columns: 2fr 1fr 1.4fr 1.4fr 1fr 1fr 1fr; gap: 12px; align-items: center; }
+
+/* ---- detail: identity hero ---------------------------------------------- */
+.job-hero {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 20px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 14px 18px; margin-bottom: 16px;
+}
+.job-hero .hero-status .badge { font-size: 13px; padding: 4px 12px; }
+.hero-fact { display: flex; flex-direction: column; gap: 2px; }
+.hero-fact .hf-k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.hero-fact .hf-v { font-size: var(--fs-sm); }
+.hero-sep { width: 1px; align-self: stretch; background: var(--border); }
+
+/* ---- detail: two-column section grid ------------------------------------ */
+.jobs-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 760px) { .jobs-cols { grid-template-columns: 1fr; } }
+
+/* ---- local DefinitionList (key/value grid) ------------------------------ */
+.dl { display: grid; grid-template-columns: minmax(120px, max-content) 1fr; gap: 8px 16px; margin: 0; }
+.dl-row { display: contents; }
+.dl-k { color: var(--muted); font-size: var(--fs-sm); }
+.dl-v { font-size: var(--fs-sm); word-break: break-word; }
+.dl-v .mono { font-size: 12.5px; }
+
+/* related dataset/model links */
+.related-links { display: flex; flex-wrap: wrap; gap: 10px; }
+.related-chip {
+  display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  border-radius: 999px; padding: 6px 14px; font-size: var(--fs-sm);
+  transition: border-color var(--transition), background var(--transition);
+}
+.related-chip:hover { border-color: var(--primary); background: var(--panel-2); }
+.related-chip .rc-k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+
+.results-empty { color: var(--muted); font-size: var(--fs-sm); }
+
+/* raw JSON view */
+.raw-json { max-height: 640px; overflow: auto; font-size: 12px; }
+
+/* ---- submit wizard: stepper --------------------------------------------- */
+.stepper { display: flex; align-items: flex-start; list-style: none; margin: 0 0 20px; padding: 0; }
+.step { display: flex; align-items: center; flex: 1; min-width: 0; color: var(--muted); }
+.step:last-child { flex: none; }
+.step-btn {
+  display: inline-flex; align-items: center; gap: 8px; background: none; border: none;
+  color: inherit; font: inherit; padding: 0; cursor: default; text-align: left;
+}
+.step-btn.clickable { cursor: pointer; }
+.step-btn.clickable:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: 8px; }
+.step-index {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 50%; flex: none;
+  border: 1.5px solid var(--border); background: var(--bg);
+  font-size: 12px; font-weight: 700; color: var(--muted);
+}
+.step-label { font-size: var(--fs-sm); white-space: nowrap; }
+.step.active { color: var(--text); }
+.step.active .step-index { border-color: var(--primary); color: var(--text); background: var(--green-dim); }
+.step.done { color: var(--text); }
+.step.done .step-index { border-color: var(--primary); background: var(--primary); color: var(--primary-fg); }
+.step-line { flex: 1; height: 2px; background: var(--border); margin: 0 12px; min-width: 16px; }
+.step.done .step-line { background: var(--primary); }
+@media (max-width: 620px) { .step-label { display: none; } }
+
+.wizard-body { display: flex; flex-direction: column; gap: 16px; }
+.wizard-actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; }
+
+.review-grid { display: grid; grid-template-columns: minmax(120px, max-content) 1fr; gap: 6px 16px; }
+.review-grid b { color: var(--muted); font-weight: 600; font-size: var(--fs-sm); }
+.review-grid span { font-size: var(--fs-sm); word-break: break-word; }
+
+/* submit success state */
+.submit-done { text-align: center; padding: var(--space-6) var(--space-4); }
+.submit-done .sd-ic {
+  width: 52px; height: 52px; border-radius: 50%; margin: 0 auto 14px;
+  display: grid; place-items: center; color: var(--green);
+  background: rgba(53,194,129,.15);
+}
+.submit-done h2 { margin: 0 0 6px; font-size: var(--fs-lg); color: var(--text); text-transform: none; letter-spacing: 0; }
+.submit-done .sd-id { margin-bottom: 18px; }
+.submit-done .sd-actions { display: flex; gap: 10px; justify-content: center; }

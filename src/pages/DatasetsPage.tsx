@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError, type DatasetImport, type DatasetSummary } from "../api";
 import { handleAuthLost, roleAtLeast } from "../auth";
 import { useAuth } from "../AuthContext";
-import StatusBadge from "../components/StatusBadge";
-import { PageHeader, EmptyState, Skeleton } from "../ui";
+import { Badge, PageHeader, EmptyState, Skeleton, Toolbar, SearchInput } from "../ui";
 import { fmt } from "../lib/format";
+import "../styles/datasets.css";
 
 export default function DatasetsPage() {
   const navigate = useNavigate();
@@ -18,6 +18,7 @@ export default function DatasetsPage() {
   const [loading, setLoading] = useState(true);
   const [firstLoad, setFirstLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -46,9 +47,16 @@ export default function DatasetsPage() {
     return () => clearInterval(t);
   }, [load]);
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return datasets;
+    return datasets.filter((d) => d.dataset_name.toLowerCase().includes(q));
+  }, [datasets, query]);
+
   return (
     <div>
       <PageHeader
+        breadcrumbs={[{ label: "Datasets" }]}
         title="Datasets"
         description="Imported, audited, and frozen datasets available for training."
         actions={
@@ -68,12 +76,31 @@ export default function DatasetsPage() {
         </div>
       )}
 
-      {error && <div className="error-box wide">{error}</div>}
+      {error && <div className="error-box wide" role="alert">{error}</div>}
 
       <section className="panel">
-        <h2>Frozen datasets</h2>
+        <div className="panel-head">
+          <h2>Frozen datasets</h2>
+        </div>
+        <Toolbar
+          start={
+            <SearchInput
+              value={query}
+              onChange={setQuery}
+              label="Filter datasets by name"
+              placeholder="Filter datasets…"
+            />
+          }
+          end={
+            !firstLoad && datasets.length > 0 ? (
+              <span className="ds-result-count">
+                {filtered.length} of {datasets.length}
+              </span>
+            ) : undefined
+          }
+        />
         {firstLoad ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="ds-skel-rows">
             {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} height={20} />)}
           </div>
         ) : datasets.length === 0 ? (
@@ -81,13 +108,25 @@ export default function DatasetsPage() {
             <p className="muted">Import one to get started{canOperate ? "." : " (operator role required)."}</p>
             {canOperate && <Link to="/datasets/new" className="btn primary">New import</Link>}
           </EmptyState>
+        ) : filtered.length === 0 ? (
+          <EmptyState title="No matches">
+            <p className="muted">No datasets match “{query}”.</p>
+          </EmptyState>
         ) : (
           <table className="table">
             <thead><tr><th>Dataset</th><th>Versions</th><th>Latest frozen</th></tr></thead>
             <tbody>
-              {datasets.map((d) => (
+              {filtered.map((d) => (
                 <tr key={d.dataset_name} className="row-link" onClick={() => navigate(`/datasets/${d.dataset_name}`)}>
-                  <td>{d.dataset_name}</td>
+                  <td>
+                    <Link
+                      to={`/datasets/${d.dataset_name}`}
+                      className="ds-name-link"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {d.dataset_name}
+                    </Link>
+                  </td>
                   <td className="muted">{d.versions}</td>
                   <td className="muted">{fmt(d.latest_frozen_at)}</td>
                 </tr>
@@ -100,11 +139,13 @@ export default function DatasetsPage() {
       <section className="panel">
         <h2>Recent imports</h2>
         {firstLoad ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div className="ds-skel-rows">
             {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} height={20} />)}
           </div>
         ) : imports.length === 0 ? (
-          <EmptyState title="No imports yet" />
+          <EmptyState title="No imports yet">
+            <p className="muted">Imports appear here as they move through the pipeline.</p>
+          </EmptyState>
         ) : (
           <table className="table">
             <thead><tr><th>Import</th><th>Dataset</th><th>Source</th><th>State</th><th>Created</th></tr></thead>
@@ -114,7 +155,7 @@ export default function DatasetsPage() {
                   <td className="mono">{im.import_id}</td>
                   <td>{im.dataset_name}</td>
                   <td className="muted">{im.source_type}</td>
-                  <td><StatusBadge status={im.state} /></td>
+                  <td><Badge status={im.state} /></td>
                   <td className="muted">{fmt(im.created_at)}</td>
                 </tr>
               ))}

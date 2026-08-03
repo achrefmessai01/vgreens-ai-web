@@ -4,15 +4,25 @@ import { api, ApiError, type Job } from "../api";
 import { handleAuthLost, roleAtLeast } from "../auth";
 import { useAuth } from "../AuthContext";
 import StatusBadge from "../components/StatusBadge";
-import { PageHeader, EmptyState, Skeleton } from "../ui";
-import { fmt } from "../lib/format";
+import {
+  PageHeader, EmptyState, Skeleton, Toolbar, SearchInput,
+  OverflowMenu, ConfirmDialog, useToast,
+} from "../ui";
+import { fmt, relTime } from "../lib/format";
+import "../styles/jobs.css";
 
 const STATUSES = ["", "queued", "running", "succeeded", "validated", "failed", "rejected", "cancelled"];
 const TYPES = ["", "training", "processing"];
 const PAGE = 20;
+const CANCELLABLE = ["queued", "running"];
+
+function shortId(id: string): string {
+  return id.length <= 16 ? id : `${id.slice(0, 8)}…${id.slice(-4)}`;
+}
 
 export default function JobsPage() {
   const navigate = useNavigate();
+  const toast = useToast();
   const { user } = useAuth();
   const canOperate = roleAtLeast(user?.role, "operator");
 
@@ -28,6 +38,11 @@ export default function JobsPage() {
   const [firstLoad, setFirstLoad] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updated, setUpdated] = useState<Date | null>(null);
+
+  // cancel flow
+  const [cancelTarget, setCancelTarget] = useState<Job | null>(null);
+  const [cancelBusy, setCancelBusy] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const load = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
@@ -70,6 +85,34 @@ export default function JobsPage() {
     setOffset(0);
   }
 
+  async function copyId(id: string) {
+    try {
+      await navigator.clipboard.writeText(id);
+      toast.success("Job ID copied");
+    } catch {
+      toast.error("Could not copy to clipboard");
+    }
+  }
+
+  async function doCancel() {
+    if (!cancelTarget) return;
+    setCancelBusy(true);
+    setCancelError(null);
+    try {
+      await api.cancelJob(cancelTarget.job_id);
+      toast.success("Cancellation requested.");
+      setCancelTarget(null);
+      load(true);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "auth") return handleAuthLost();
+      const m = e instanceof Error ? e.message : "Cancel failed.";
+      setCancelError(m);
+      toast.error(m);
+    } finally {
+      setCancelBusy(false);
+    }
+  }
+
   const from = total === 0 ? 0 : offset + 1;
   const to = Math.min(offset + PAGE, total);
 
@@ -77,6 +120,7 @@ export default function JobsPage() {
     <div>
       <PageHeader
         title="Jobs"
+        breadcrumbs={[{ label: "Jobs" }]}
         description="Training and processing runs across the platform."
         actions={
           <>
@@ -101,49 +145,103 @@ export default function JobsPage() {
         ))}
       </div>
 
-      <div className="filters">
-        <label>
-          Type
-          <select className="input sm" value={type} onChange={(e) => onFilter(setType, e.target.value)}>
-            {TYPES.map((t) => <option key={t} value={t}>{t || "any"}</option>)}
-          </select>
-        </label>
-        <label>
-          Model
-          <input className="input sm" placeholder="filter by model" value={model}
-            onChange={(e) => onFilter(setModel, e.target.value)} />
-        </label>
-      </div>
+      <Toolbar
+        start={
+          <>
+            <SearchInput
+              value={model}
+              onChange={(v) => onFilter(setModel, v)}
+              label="Filter by model"
+              placeholder="Filter by model…"
+            />
+            <label className="field-inline">
+              Type
+              <select className="input sm" value={type} onChange={(e) => onFilter(setType, e.target.value)}>
+                {TYPES.map((t) => <option key={t} value={t}>{t || "any"}</option>)}
+              </select>
+            </label>
+          </>
+        }
+        end={!firstLoad && !error ? <span className="jobs-count">{from}–{to} of {total}</span> : undefined}
+      />
 
-      {error && <div className="error-box wide">{error}</div>}
+      {error && (
+        <div className="error-box wide" role="alert">
+          {error}{" "}
+          <button className="btn ghost sm-btn" style={{ marginLeft: 8 }} onClick={() => load()}>Retry</button>
+        </div>
+      )}
 
       <section className="panel">
         {firstLoad ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} height={20} />)}
+          <div className="sk-table">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div className="sk-row" key={i}>
+                {Array.from({ length: 7 }).map((__, c) => <Skeleton key={c} height={16} />)}
+              </div>
+            ))}
           </div>
         ) : jobs.length === 0 ? (
-          <EmptyState title="No jobs match">
-            <p className="muted">Try clearing filters{canOperate ? ", or submit a new job." : "."}</p>
-            {canOperate && <button className="btn primary" onClick={() => navigate("/submit")}>Submit job</button>}
-          </EmptyState>
+          error ? (
+            <EmptyState title="Couldn’t load jobs">
+              <p className="muted">Check your connection, then try again.</p>
+              <button className="btn" onClick={() => load()}>Retry</button>
+            </EmptyState>
+          ) : (
+            <EmptyState title="No jobs match">
+              <p className="muted">Try clearing filters{canOperate ? ", or submit a new job." : "."}</p>
+              {canOperate && <button className="btn primary" onClick={() => navigate("/submit")}>Submit job</button>}
+            </EmptyState>
+          )
         ) : (
           <table className="table">
             <thead>
-              <tr><th>Job</th><th>Type</th><th>Model</th><th>Dataset</th><th>Status</th><th>Worker</th><th>Created</th></tr>
+              <tr>
+                <th>Job</th><th>Type</th><th>Model</th><th>Dataset</th>
+                <th>Status</th><th>Worker</th><th>Created</th><th className="cell-actions" aria-label="Actions"></th>
+              </tr>
             </thead>
             <tbody>
-              {jobs.map((j) => (
-                <tr key={j.job_id} className="row-link" onClick={() => navigate(`/jobs/${j.job_id}`)}>
-                  <td className="mono">{j.job_id}</td>
-                  <td>{j.job_type}</td>
-                  <td>{j.model_name}</td>
-                  <td className="muted">{j.dataset_name ? `${j.dataset_name}:${j.dataset_version ?? "?"}` : "—"}</td>
-                  <td><StatusBadge status={j.status} /></td>
-                  <td className="muted">{j.worker_id ?? "—"}</td>
-                  <td className="muted">{fmt(j.created_at)}</td>
-                </tr>
-              ))}
+              {jobs.map((j) => {
+                const cancellable = canOperate && CANCELLABLE.includes(j.status);
+                return (
+                  <tr key={j.job_id} className="row-link" onClick={() => navigate(`/jobs/${j.job_id}`)}>
+                    <td>
+                      <span className="id-cell">
+                        <span className="mono" title={j.job_id}>{shortId(j.job_id)}</span>
+                        <button
+                          className="copy-btn"
+                          aria-label={`Copy job id ${j.job_id}`}
+                          title="Copy job id"
+                          onClick={(e) => { e.stopPropagation(); copyId(j.job_id); }}
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <rect x="9" y="9" width="11" height="11" rx="2" stroke="currentColor" strokeWidth="2" />
+                            <path d="M5 15V5a2 2 0 0 1 2-2h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                          </svg>
+                        </button>
+                      </span>
+                    </td>
+                    <td>{j.job_type}</td>
+                    <td>{j.model_name}</td>
+                    <td className="muted">{j.dataset_name ? `${j.dataset_name}:${j.dataset_version ?? "?"}` : "—"}</td>
+                    <td><StatusBadge status={j.status} /></td>
+                    <td className="muted">{j.worker_id ?? "—"}</td>
+                    <td className="muted"><span title={fmt(j.created_at)}>{relTime(j.created_at)}</span></td>
+                    <td className="cell-actions" onClick={(e) => e.stopPropagation()}>
+                      {cancellable && (
+                        <OverflowMenu
+                          label={`Actions for job ${shortId(j.job_id)}`}
+                          groups={[{
+                            danger: true,
+                            items: [{ label: "Cancel job", danger: true, onSelect: () => { setCancelError(null); setCancelTarget(j); } }],
+                          }]}
+                        />
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
@@ -156,6 +254,19 @@ export default function JobsPage() {
           <button className="btn" disabled={to >= total || loading} onClick={() => setOffset(offset + PAGE)}>Next →</button>
         </div>
       </div>
+
+      {cancelTarget && (
+        <ConfirmDialog
+          title="Cancel job?"
+          danger
+          confirmLabel="Cancel job"
+          busy={cancelBusy}
+          error={cancelError}
+          body={<>This asks the worker to stop <b className="mono">{shortId(cancelTarget.job_id)}</b>. This can’t be undone.</>}
+          onCancel={() => { if (!cancelBusy) { setCancelTarget(null); setCancelError(null); } }}
+          onConfirm={doCancel}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,5 @@
+import "../styles/models.css";
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
 import { PageHeader } from "../ui";
 
 const TASKS = ["object_detection", "classification", "segmentation", "custom"] as const;
@@ -20,8 +20,12 @@ const PRESET_FOR_TASK: Record<Task, string> = {
 
 const slug = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 
+const STEPS = ["Basics", "Preset & dataset", "Training config", "Review"] as const;
+
 export default function OnboardModelPage() {
-  const navigate = useNavigate();
+  const [step, setStep] = useState(0);
+  const [tried, setTried] = useState<Set<number>>(new Set());
+
   const [name, setName] = useState("");
   const [owner, setOwner] = useState("");
   const [task, setTask] = useState<Task>("object_detection");
@@ -42,6 +46,7 @@ export default function OnboardModelPage() {
 
   function onTask(t: Task) { setTask(t); setPreset(PRESET_FOR_TASK[t]); }
 
+  // ---- generation logic (unchanged) ----
   const yaml = useMemo(() => {
     const thresholdsBlock = bar.trim()
       ? `  thresholds:\n    ${metric}: ${Number(bar)}`
@@ -98,129 +103,200 @@ export default function OnboardModelPage() {
     URL.revokeObjectURL(url);
   }
 
-  const ready = !!mName && !!slug(dsName);
+  // ---- per-step validation ----
+  const nEpochs = Number(epochs), nImg = Number(imageSize), nBatch = Number(batchSize);
+  const errBasics = !mName ? "Enter a model name (lowercase_underscore)." : null;
+  const errDataset = !slug(dsName) ? "Enter a dataset name." : null;
+  const errEpochs = !(Number.isFinite(nEpochs) && nEpochs >= 1) ? "Epochs must be 1 or more." : null;
+  const errImg = !(Number.isFinite(nImg) && nImg >= 32) ? "Image size must be 32 or more." : null;
+  const errBatch = !(Number.isFinite(nBatch) && nBatch >= 1) ? "Batch size must be 1 or more." : null;
+
+  const stepValid = [!errBasics, !errDataset, !errEpochs && !errImg && !errBatch, true];
+  const ready = !errBasics && !errDataset;
+  const show = (s: number) => tried.has(s);
+
+  function goNext() {
+    if (!stepValid[step]) { setTried((t) => new Set(t).add(step)); return; }
+    setStep((s) => Math.min(s + 1, STEPS.length - 1));
+  }
+  function goStep(target: number) {
+    if (target <= step) { setStep(target); return; }
+    // only allow forward jumps if every intervening step is valid
+    for (let i = step; i < target; i++) {
+      if (!stepValid[i]) { setStep(i); setTried((t) => new Set(t).add(i)); return; }
+    }
+    setStep(target);
+  }
 
   return (
     <div>
-      <button className="link" style={{ display: "inline-block", marginBottom: 8 }} onClick={() => navigate("/models")}>← Models</button>
       <PageHeader
+        breadcrumbs={[{ label: "Models", to: "/models" }, { label: "Onboard model" }]}
         title="Onboard a model"
-        description="Generate a valid model.yaml and the commands to scaffold, build, and train a new custom model."
+        description="A guided builder for a valid model.yaml plus the commands to scaffold, build and train a new model."
       />
 
-      <div className="warn-box wide">
-        Repo creation and CI run through the <b>vgreens-ai</b> CLI (they need git + your GitLab token), so this
-        wizard prepares the spec and commands — it doesn't touch GitLab from the browser.
-      </div>
-
-      <div className="tiles" style={{ gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 16, alignItems: "start" }}>
-        <form className="panel form" onSubmit={(e) => e.preventDefault()}>
-          <div className="form-2">
-            <Field label="Model name" required hint="lowercase_underscore">
-              <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. leaf_health" autoFocus />
-            </Field>
-            <Field label="Owner" hint="Optional.">
-              <input className="input" value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="you@v-greens.com" />
-            </Field>
+      {/* stepper */}
+      <nav className="stepper" aria-label="Onboarding steps">
+        {STEPS.map((label, i) => (
+          <div key={label} style={{ display: "contents" }}>
+            {i > 0 && <span className={`step-line ${i <= step ? "done" : ""}`} aria-hidden="true" />}
+            <button
+              type="button"
+              className={`step-btn ${i === step ? "active" : ""} ${i < step ? "done" : ""}`}
+              aria-current={i === step ? "step" : undefined}
+              onClick={() => goStep(i)}
+            >
+              <span className="step-num">{i < step ? "✓" : i + 1}</span>
+              <span className="step-label">{label}</span>
+            </button>
           </div>
+        ))}
+      </nav>
 
-          <div className="form-2">
-            <Field label="Task">
-              <select className="input" value={task} onChange={(e) => onTask(e.target.value as Task)}>
-                {TASKS.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </Field>
-            <Field label="Preset" hint="Ultralytics presets generate working code; custom_python is a skeleton.">
-              <select className="input" value={preset} onChange={(e) => setPreset(e.target.value)}>
-                {Object.keys(PRESETS).map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
-            </Field>
-          </div>
-
-          <div className="form-2">
-            <Field label="Dataset name" required>
-              <input className="input" value={dsName} onChange={(e) => setDsName(e.target.value)} placeholder="e.g. leaf_health" />
-            </Field>
-            <Field label="Dataset version">
-              <input className="input" value={dsVer} onChange={(e) => setDsVer(e.target.value)} placeholder="v1" />
-            </Field>
-          </div>
-
-          <div className="form-2">
-            <Field label="Primary metric" hint="e.g. mAP50, accuracy">
-              <input className="input" value={metric} onChange={(e) => setMetric(e.target.value)} />
-            </Field>
-            <Field label={`Min ${metric || "metric"} to promote`} hint="Blank = no gate yet.">
-              <input className="input" type="number" step="0.01" value={bar} onChange={(e) => setBar(e.target.value)} placeholder="optional" />
-            </Field>
-          </div>
-
-          <div className="form-2">
-            <Field label="GPUs">
-              <div className="seg">
-                {[1, 2].map((n) => (
-                  <button type="button" key={n} className={gpu === n ? "seg-btn active" : "seg-btn"} onClick={() => setGpu(n)}>
-                    {n === 1 ? "1 GPU" : "2 GPUs"}
-                  </button>
-                ))}
-              </div>
-            </Field>
-            <Field label="GitLab namespace">
-              <input className="input" value={ns} onChange={(e) => setNs(e.target.value)} />
-            </Field>
-          </div>
-
-          <div className="form-3">
-            <Field label="Epochs" hint="Lower = faster (e.g. 3 for a quick run).">
-              <input className="input" type="number" min="1" value={epochs} onChange={(e) => setEpochs(e.target.value)} />
-            </Field>
-            <Field label="Image size" hint="Smaller = faster (e.g. 320).">
-              <input className="input" type="number" min="32" step="32" value={imageSize} onChange={(e) => setImageSize(e.target.value)} />
-            </Field>
-            <Field label="Batch size">
-              <input className="input" type="number" min="1" value={batchSize} onChange={(e) => setBatchSize(e.target.value)} />
-            </Field>
-          </div>
-
-          <div className="field">
-            <label className="field-label">Repository</label>
-            <input className="input mono" value={repo} readOnly />
-          </div>
-        </form>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <section className="panel">
-            <div className="panel-head">
-              <h2>model.yaml</h2>
-              <div className="row" style={{ gap: 8 }}>
-                <button className="btn ghost sm-btn" onClick={() => copy(yaml, "yaml")}>{copied === "yaml" ? "Copied" : "Copy"}</button>
-                <button className="btn sm-btn" onClick={download} disabled={!ready}>Download</button>
-              </div>
+      <section className="panel">
+        {step === 0 && (
+          <form className="form" style={{ maxWidth: "100%" }} onSubmit={(e) => e.preventDefault()}>
+            <div className="form-2">
+              <Field label="Model name" required hint="lowercase_underscore" error={show(0) ? errBasics : null}>
+                <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. leaf_health" autoFocus />
+              </Field>
+              <Field label="Owner" hint="Optional.">
+                <input className="input" value={owner} onChange={(e) => setOwner(e.target.value)} placeholder="you@v-greens.com" />
+              </Field>
             </div>
-            <pre className="code-block">{yaml}</pre>
-          </section>
+            {mName && <p className="hint muted">Registry repository: <span className="mono">{repo}</span></p>}
+          </form>
+        )}
 
-          <section className="panel">
-            <div className="panel-head">
-              <h2>Commands</h2>
-              <button className="btn ghost sm-btn" onClick={() => copy(commands, "cmd")}>{copied === "cmd" ? "Copied" : "Copy"}</button>
+        {step === 1 && (
+          <form className="form" style={{ maxWidth: "100%" }} onSubmit={(e) => e.preventDefault()}>
+            <div className="form-2">
+              <Field label="Task">
+                <select className="input" value={task} onChange={(e) => onTask(e.target.value as Task)}>
+                  {TASKS.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </Field>
+              <Field label="Preset" hint="Ultralytics presets generate working code; custom_python is a skeleton.">
+                <select className="input" value={preset} onChange={(e) => setPreset(e.target.value)}>
+                  {Object.keys(PRESETS).map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </Field>
             </div>
-            <pre className="code-block">{commands}</pre>
-          </section>
+            <div className="form-2">
+              <Field label="Dataset name" required error={show(1) ? errDataset : null}>
+                <input className="input" value={dsName} onChange={(e) => setDsName(e.target.value)} placeholder="e.g. leaf_health" />
+              </Field>
+              <Field label="Dataset version">
+                <input className="input" value={dsVer} onChange={(e) => setDsVer(e.target.value)} placeholder="v1" />
+              </Field>
+            </div>
+          </form>
+        )}
+
+        {step === 2 && (
+          <form className="form" style={{ maxWidth: "100%" }} onSubmit={(e) => e.preventDefault()}>
+            <div className="form-3">
+              <Field label="Epochs" hint="Lower = faster (e.g. 3 for a quick run)." error={show(2) ? errEpochs : null}>
+                <input className="input" type="number" min="1" value={epochs} onChange={(e) => setEpochs(e.target.value)} />
+              </Field>
+              <Field label="Image size" hint="Smaller = faster (e.g. 320)." error={show(2) ? errImg : null}>
+                <input className="input" type="number" min="32" step="32" value={imageSize} onChange={(e) => setImageSize(e.target.value)} />
+              </Field>
+              <Field label="Batch size" error={show(2) ? errBatch : null}>
+                <input className="input" type="number" min="1" value={batchSize} onChange={(e) => setBatchSize(e.target.value)} />
+              </Field>
+            </div>
+            <div className="form-2">
+              <Field label="Primary metric" hint="e.g. mAP50, accuracy">
+                <input className="input" value={metric} onChange={(e) => setMetric(e.target.value)} />
+              </Field>
+              <Field label={`Min ${metric || "metric"} to promote`} hint="Blank = no gate yet.">
+                <input className="input" type="number" step="0.01" value={bar} onChange={(e) => setBar(e.target.value)} placeholder="optional" />
+              </Field>
+            </div>
+            <div className="form-2">
+              <Field label="GPUs">
+                <div className="seg">
+                  {[1, 2].map((n) => (
+                    <button type="button" key={n} className={gpu === n ? "seg-btn active" : "seg-btn"} onClick={() => setGpu(n)}>
+                      {n === 1 ? "1 GPU" : "2 GPUs"}
+                    </button>
+                  ))}
+                </div>
+              </Field>
+              <Field label="GitLab namespace">
+                <input className="input" value={ns} onChange={(e) => setNs(e.target.value)} />
+              </Field>
+            </div>
+          </form>
+        )}
+
+        {step === 3 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div>
+              <h2 style={{ margin: "0 0 12px" }}>Review</h2>
+              <dl className="review-grid">
+                <dt>Model</dt><dd className="mono">{mName || "—"}</dd>
+                <dt>Owner</dt><dd>{owner.trim() || <span className="muted">none</span>}</dd>
+                <dt>Task</dt><dd>{task}</dd>
+                <dt>Preset</dt><dd className="mono">{preset}</dd>
+                <dt>Dataset</dt><dd className="mono">{slug(dsName) || "—"} · {dsVer.trim() || "v1"}</dd>
+                <dt>Training</dt><dd>{Number(epochs) || 50} epochs · {Number(imageSize) || 640}px · batch {Number(batchSize) || 16} · {gpu} GPU{gpu === 1 ? "" : "s"}</dd>
+                <dt>Promotion gate</dt><dd>{bar.trim() ? <span className="mono">{metric} ≥ {Number(bar)}</span> : <span className="muted">none yet</span>}</dd>
+                <dt>Repository</dt><dd className="mono">{ns.trim() || "vgreens-models"}/{repo}</dd>
+              </dl>
+            </div>
+
+            <div className="warn-box wide" style={{ margin: 0 }}>
+              Repo creation and CI run through the <b>vgreens-ai</b> CLI (they need git + your GitLab token), so this
+              wizard prepares the spec and commands — it doesn't touch GitLab from the browser.
+            </div>
+
+            <section className="panel" style={{ margin: 0 }}>
+              <div className="panel-head">
+                <h2>model.yaml</h2>
+                <div className="row" style={{ gap: 8 }}>
+                  <button className="btn ghost sm-btn" onClick={() => copy(yaml, "yaml")}>{copied === "yaml" ? "Copied" : "Copy"}</button>
+                  <button className="btn primary sm-btn" onClick={download} disabled={!ready}>Download model.yaml</button>
+                </div>
+              </div>
+              <pre className="code-block">{yaml}</pre>
+            </section>
+
+            <section className="panel" style={{ margin: 0 }}>
+              <div className="panel-head">
+                <h2>Commands</h2>
+                <button className="btn ghost sm-btn" onClick={() => copy(commands, "cmd")}>{copied === "cmd" ? "Copied" : "Copy"}</button>
+              </div>
+              <pre className="code-block">{commands}</pre>
+            </section>
+          </div>
+        )}
+
+        {/* wizard navigation */}
+        <div className="wizard-nav">
+          <button className="btn ghost" onClick={() => setStep((s) => Math.max(0, s - 1))} disabled={step === 0}>← Back</button>
+          <div className="wn-end">
+            {step < STEPS.length - 1
+              ? <button className="btn primary" onClick={goNext} disabled={!stepValid[step]}>Next →</button>
+              : <button className="btn primary" onClick={download} disabled={!ready}>Download model.yaml</button>}
+          </div>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
 
-function Field({ label, required, hint, children }: {
-  label: string; required?: boolean; hint?: string; children: React.ReactNode;
+function Field({ label, required, hint, error, children }: {
+  label: string; required?: boolean; hint?: string; error?: string | null; children: React.ReactNode;
 }) {
   return (
     <div className="field">
       <label className="field-label">{label} {required && <span className="req">*</span>}</label>
       {children}
-      {hint && <div className="field-hint muted">{hint}</div>}
+      {error ? <div className="field-error" role="alert">{error}</div>
+        : hint && <div className="field-hint muted">{hint}</div>}
     </div>
   );
 }

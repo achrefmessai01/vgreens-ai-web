@@ -1,0 +1,122 @@
+/* overview.css — Phase 2 styling for the Overview (Dashboard) and Monitoring
+ * pages. Scoped, token-based, no globals touched. Imported by the two pages. */
+
+/* ---- metric card grid ------------------------------------------------- */
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-3);
+}
+
+.metric-card {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-1);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.metric-card.mc-ok      { border-left-color: var(--success); }
+.metric-card.mc-warn    { border-left-color: var(--warning); }
+.metric-card.mc-bad     { border-left-color: var(--danger); }
+.metric-card.mc-unknown { border-left-color: var(--muted); }
+.metric-card.mc-neutral { border-left-color: var(--border); }
+
+.mc-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mc-title {
+  color: var(--muted); font-size: var(--fs-xs); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .04em;
+}
+
+.mc-flag { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.mc-flag-ok      { color: var(--success); }
+.mc-flag-warn    { color: var(--warning); }
+.mc-flag-bad     { color: var(--danger); }
+.mc-flag-unknown { color: var(--muted); }
+
+/* status conveyed by text + SHAPE + colour (never colour alone) */
+.mc-shape { width: 9px; height: 9px; flex: none; background: currentColor; }
+.mc-flag-ok .mc-shape { border-radius: 50%; }                 /* ● circle  = healthy */
+.mc-flag-warn .mc-shape {                                     /* ▲ triangle = attention */
+  background: transparent; width: 0; height: 0;
+  border-left: 5px solid transparent; border-right: 5px solid transparent;
+  border-bottom: 9px solid currentColor;
+}
+.mc-flag-bad .mc-shape { border-radius: 2px; }                /* ■ square  = action needed */
+.mc-flag-unknown .mc-shape {                                  /* ○ hollow  = unknown */
+  background: transparent; border: 1.5px solid currentColor; border-radius: 50%;
+}
+
+.mc-value {
+  font-size: var(--fs-2xl); font-weight: 700; margin-top: var(--space-1);
+  line-height: 1.15; word-break: break-word;
+}
+.mc-sub { font-size: var(--fs-xs); color: var(--muted); line-height: 1.4; }
+.mc-link {
+  margin-top: var(--space-2); font-size: var(--fs-xs); font-weight: 600;
+  color: var(--accent); text-decoration: none; align-self: flex-start;
+}
+.mc-link:hover { text-decoration: underline; }
+.mc-link:focus-visible { outline: none; box-shadow: var(--focus-ring); border-radius: 6px; }
+
+/* skeleton variant */
+.metric-card.is-loading { gap: var(--space-3); }
+
+/* ---- page sections ---------------------------------------------------- */
+.ov-section { margin-top: var(--space-5); }
+.ov-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--space-3); margin-bottom: var(--space-3); }
+.ov-section-head h2 { font-size: var(--fs-md); margin: 0; }
+.ov-note { font-size: var(--fs-xs); color: var(--warning); margin-top: var(--space-2); }
+.ov-meta { font-size: var(--fs-xs); color: var(--muted); align-self: center; }
+
+/* ---- recent activity list -------------------------------------------- */
+.activity { display: flex; flex-direction: column; }
+.activity-row {
+  display: grid; grid-template-columns: 1fr auto auto; gap: var(--space-3);
+  align-items: center; padding: 10px var(--space-2);
+  border-bottom: 1px solid var(--panel-2); cursor: pointer; text-align: left;
+  background: transparent; border-left: none; border-right: none; border-top: none;
+  width: 100%; color: var(--text); font: inherit;
+}
+.activity-row:last-child { border-bottom: none; }
+.activity-row:hover, .activity-row:focus-visible { background: var(--panel-2); outline: none; }
+.activity-main { min-width: 0; }
+.activity-title { font-weight: 600; font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-meta { color: var(--muted); font-size: var(--fs-xs); margin-top: 2px; }
+.activity-time { color: var(--muted); font-size: var(--fs-xs); white-space: nowrap; }
+
+/* ---- monitoring: overall health summary ------------------------------ */
+.mon-summary {
+  display: flex; align-items: center; gap: var(--space-4); flex-wrap: wrap;
+  padding: var(--space-4); border: 1px solid var(--border); border-left: 3px solid var(--border);
+  border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow-1);
+  margin-bottom: var(--space-4);
+}
+.mon-summary.st-ok       { border-left-color: var(--success); }
+.mon-summary.st-degraded { border-left-color: var(--warning); }
+.mon-summary.st-down     { border-left-color: var(--danger); }
+.mon-summary.st-unknown  { border-left-color: var(--muted); }
+.mon-summary-title { display: flex; align-items: center; gap: 10px; font-size: var(--fs-xl); font-weight: 700; }
+.mon-summary-detail { color: var(--muted); font-size: var(--fs-sm); flex: 1 1 260px; }
+
+/* larger status shape for the summary line, reusing the mc-flag shapes */
+.mon-summary .mc-flag { font-size: var(--fs-lg); }
+.mon-summary .mc-shape { width: 12px; height: 12px; }
+.mon-summary .mc-flag-warn .mc-shape { border-left-width: 7px; border-right-width: 7px; border-bottom-width: 12px; }
+
+/* ---- monitoring: stale / unavailable banner -------------------------- */
+.mon-stale {
+  display: flex; align-items: center; gap: 10px; padding: 10px 14px;
+  border-radius: var(--radius); font-size: var(--fs-sm); margin-bottom: var(--space-4);
+  background: rgba(224,179,65,.12); border: 1px solid rgba(224,179,65,.45); color: var(--warning);
+}
+.mon-stale .mc-shape { width: 0; height: 0; background: transparent; flex: none;
+  border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 9px solid currentColor; }
+
+.mon-h { font-size: var(--fs-md); margin: var(--space-5) 0 var(--space-3); }
+.mon-sub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-3); }
