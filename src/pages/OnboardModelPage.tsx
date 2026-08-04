@@ -5,16 +5,20 @@ import { PageHeader } from "../ui";
 const TASKS = ["object_detection", "classification", "segmentation", "custom"] as const;
 type Task = (typeof TASKS)[number];
 
-const PRESETS: Record<string, { task: Task }> = {
-  ultralytics_detection: { task: "object_detection" },
-  ultralytics_classification: { task: "classification" },
-  ultralytics_segmentation: { task: "segmentation" },
+const PRESETS: Record<string, { task: Task; legacy?: boolean }> = {
+  rfdetr_detection: { task: "object_detection" },
+  rfdetr_segmentation: { task: "segmentation" },
+  cnn_classification: { task: "classification" },
   custom_python: { task: "custom" },
+  // Legacy — Ultralytics is AGPL-3.0 (not free for commercial use); prefer RF-DETR.
+  ultralytics_detection: { task: "object_detection", legacy: true },
+  ultralytics_classification: { task: "classification", legacy: true },
+  ultralytics_segmentation: { task: "segmentation", legacy: true },
 };
 const PRESET_FOR_TASK: Record<Task, string> = {
-  object_detection: "ultralytics_detection",
-  classification: "ultralytics_classification",
-  segmentation: "ultralytics_segmentation",
+  object_detection: "rfdetr_detection",
+  classification: "cnn_classification",
+  segmentation: "rfdetr_segmentation",
   custom: "custom_python",
 };
 
@@ -29,13 +33,16 @@ export default function OnboardModelPage() {
   const [name, setName] = useState("");
   const [owner, setOwner] = useState("");
   const [task, setTask] = useState<Task>("object_detection");
-  const [preset, setPreset] = useState<string>("ultralytics_detection");
+  const [preset, setPreset] = useState<string>("rfdetr_detection");
   const [dsName, setDsName] = useState("");
   const [dsVer, setDsVer] = useState("v1");
   const [gpu, setGpu] = useState(1);
   const [epochs, setEpochs] = useState("50");
   const [imageSize, setImageSize] = useState("640");
   const [batchSize, setBatchSize] = useState("16");
+  const [gradAccum, setGradAccum] = useState("");
+  const [effBatch, setEffBatch] = useState("");
+  const [deps, setDeps] = useState("");
   const [metric, setMetric] = useState("mAP50");
   const [bar, setBar] = useState("");
   const [ns, setNs] = useState("vgreens-models");
@@ -46,7 +53,9 @@ export default function OnboardModelPage() {
 
   function onTask(t: Task) { setTask(t); setPreset(PRESET_FOR_TASK[t]); }
 
-  // ---- generation logic (unchanged) ----
+  const depList = deps.split(/[\n,]/).map((s) => s.trim()).filter(Boolean);
+
+  // ---- generation logic ----
   const yaml = useMemo(() => {
     const thresholdsBlock = bar.trim()
       ? `  thresholds:\n    ${metric}: ${Number(bar)}`
@@ -66,17 +75,20 @@ export default function OnboardModelPage() {
       `  epochs: ${Number(epochs) || 50}`,
       `  image_size: ${Number(imageSize) || 640}`,
       `  batch_size: ${Number(batchSize) || 16}`,
+      ...(gradAccum.trim() ? [`  grad_accumulation_steps: ${Number(gradAccum)}`] : []),
+      ...(effBatch.trim() ? [`  effective_batch: ${Number(effBatch)}`] : []),
       `  gpu_count: ${gpu}`,
       "validation:",
       thresholdsBlock,
       "processing:",
       "  confidence_threshold: 0.25",
+      ...(depList.length ? ["dependencies:", ...depList.map((d) => `  - ${d}`)] : []),
       "repository:",
       `  namespace: ${ns.trim() || "vgreens-models"}`,
       `  name: ${repo}`,
       "",
     ].join("\n");
-  }, [mName, task, owner, preset, dsName, dsVer, gpu, epochs, imageSize, batchSize, metric, bar, ns, repo]);
+  }, [mName, task, owner, preset, dsName, dsVer, gpu, epochs, imageSize, batchSize, gradAccum, effBatch, deps, metric, bar, ns, repo]);
 
   const commands = useMemo(() => [
     "# 1 — save the spec below as model.yaml, then scaffold + create the GitLab repo",
@@ -177,9 +189,9 @@ export default function OnboardModelPage() {
                   {TASKS.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </Field>
-              <Field label="Preset" hint="Ultralytics presets generate working code; custom_python is a skeleton.">
+              <Field label="Preset" hint="RF-DETR (Apache-2.0) generates working detection code; segmentation/classification are scaffolds; ultralytics presets are legacy (AGPL).">
                 <select className="input" value={preset} onChange={(e) => setPreset(e.target.value)}>
-                  {Object.keys(PRESETS).map((p) => <option key={p} value={p}>{p}</option>)}
+                  {Object.entries(PRESETS).map(([p, v]) => <option key={p} value={p}>{p}{v.legacy ? " (legacy · AGPL)" : ""}</option>)}
                 </select>
               </Field>
             </div>
@@ -203,8 +215,16 @@ export default function OnboardModelPage() {
               <Field label="Image size" hint="Smaller = faster (e.g. 320)." error={show(2) ? errImg : null}>
                 <input className="input" type="number" min="32" step="32" value={imageSize} onChange={(e) => setImageSize(e.target.value)} />
               </Field>
-              <Field label="Batch size" error={show(2) ? errBatch : null}>
+              <Field label="Batch size" hint="Images per step — cap by VRAM." error={show(2) ? errBatch : null}>
                 <input className="input" type="number" min="1" value={batchSize} onChange={(e) => setBatchSize(e.target.value)} />
+              </Field>
+            </div>
+            <div className="form-2">
+              <Field label="Grad accumulation steps" hint="Optional. Effective batch = batch × steps.">
+                <input className="input" type="number" min="1" value={gradAccum} onChange={(e) => setGradAccum(e.target.value)} placeholder="optional" />
+              </Field>
+              <Field label="Effective batch" hint="Optional. If set, steps are derived to reach it (≈16 is typical).">
+                <input className="input" type="number" min="1" value={effBatch} onChange={(e) => setEffBatch(e.target.value)} placeholder="optional, e.g. 16" />
               </Field>
             </div>
             <div className="form-2">
@@ -229,6 +249,9 @@ export default function OnboardModelPage() {
                 <input className="input" value={ns} onChange={(e) => setNs(e.target.value)} />
               </Field>
             </div>
+            <Field label="Extra dependencies" hint="Optional — one pip requirement per line (e.g. timm==1.0.9). Installed into the model image at build time; needed for custom models with their own libraries.">
+              <textarea className="input" rows={3} value={deps} onChange={(e) => setDeps(e.target.value)} placeholder={"torch==2.3.1\ntimm==1.0.9"} style={{ resize: "vertical", fontFamily: "var(--mono, monospace)" }} />
+            </Field>
           </form>
         )}
 
