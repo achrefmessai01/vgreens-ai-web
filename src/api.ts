@@ -306,8 +306,11 @@ export interface MonitorRecentJob {
 export interface MonitorRecentError {
   job_id: string;
   model_name?: string | null;
+  job_type?: string | null;
+  at?: string | null;
   created_at?: string | null;
-  error?: string | null;
+  message?: string | null;   // concise one-line summary (cleaned server-side)
+  detail?: string | null;    // fuller, still-bounded text
 }
 
 export interface MonitorStorage {

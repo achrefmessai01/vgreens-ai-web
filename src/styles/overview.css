@@ -138,3 +138,25 @@
 .mon-bar-fill.bad  { background: var(--danger); }
 .mon-metric { font-size: var(--fs-xs); color: var(--muted); margin-top: 8px; }
 .mon-metric b { color: var(--text); font-weight: 600; }
+
+/* ── Alerts & recent errors panel ─────────────────────────────────────────── */
+.mon-alert-table td { vertical-align: top; }
+.mon-alert-table .mono { font-size: 12px; }
+.mon-joblink { color: var(--accent); text-decoration: none; }
+.mon-joblink:hover { text-decoration: underline; }
+/* concise error message: one line with ellipsis until expanded */
+.mon-err > summary {
+  cursor: pointer; list-style: none; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 46ch; display: inline-block; vertical-align: bottom;
+}
+.mon-err > summary::-webkit-details-marker { display: none; }
+.mon-err > summary::before { content: "▸ "; color: var(--text-muted); }
+.mon-err[open] > summary { white-space: normal; max-width: none; }
+.mon-err[open] > summary::before { content: "▾ "; }
+.mon-err-detail {
+  margin: 6px 0 0; padding: 8px 10px; background: var(--surface-subtle);
+  border: 1px solid var(--border); border-radius: var(--radius, 6px);
+  font-size: 11.5px; color: var(--text-secondary); white-space: pre-wrap;
+  max-height: 220px; overflow: auto; word-break: break-word;
+}

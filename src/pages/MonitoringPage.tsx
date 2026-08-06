@@ -226,12 +226,13 @@ export default function MonitoringPage() {
           <p className="muted" style={{ marginTop: 4 }}>All monitored conditions are within thresholds and no jobs have failed recently.</p>
         </EmptyState>
       ) : (
-        <table className="table">
-          <thead><tr><th>Severity</th><th>Source</th><th>Component</th><th>Summary</th></tr></thead>
+        <table className="table mon-alert-table">
+          <thead><tr><th>Severity</th><th>When</th><th>Source</th><th>Component</th><th>Summary</th></tr></thead>
           <tbody>
             {alertList.map((a) => (
               <tr key={`alert-${a.name}`}>
                 <td><span className={`badge ${a.severity === "critical" ? "bad" : "warning"}`}>{a.severity}</span></td>
+                <td className="muted">now</td>
                 <td>{a.name}</td>
                 <td className="muted">{a.component ?? "—"}</td>
                 <td>{a.summary ?? ""}</td>
@@ -240,9 +241,19 @@ export default function MonitoringPage() {
             {errList.map((e) => (
               <tr key={`err-${e.job_id}`}>
                 <td><span className="badge bad">failed job</span></td>
-                <td className="mono">{e.job_id}</td>
+                <td className="muted" title={e.at ?? e.created_at ?? ""}>{relTime(e.at ?? e.created_at ?? null)}</td>
+                <td><a className="mono mon-joblink" href={`#/jobs/${encodeURIComponent(e.job_id)}`}>{e.job_id}</a></td>
                 <td className="muted">{e.model_name ?? "—"}</td>
-                <td className="muted">{e.error ?? "—"}</td>
+                <td>
+                  {e.detail && e.detail !== e.message ? (
+                    <details className="mon-err">
+                      <summary className="mono">{e.message ?? "—"}</summary>
+                      <pre className="mon-err-detail">{e.detail}</pre>
+                    </details>
+                  ) : (
+                    <span className="mono" title={e.message ?? ""}>{e.message ?? "—"}</span>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
