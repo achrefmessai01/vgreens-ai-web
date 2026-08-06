@@ -120,3 +120,21 @@
 
 .mon-h { font-size: var(--fs-md); margin: var(--space-5) 0 var(--space-3); }
 .mon-sub-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: var(--space-3); }
+
+/* ---- monitoring: live connection indicator --------------------------- */
+.mon-conn { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-xs); font-weight: 600; align-self: center; }
+.mon-conn-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+.mon-conn.live .mon-conn-dot { background: var(--success); box-shadow: 0 0 0 3px rgba(63,185,80,.18); }
+.mon-conn.reconnecting .mon-conn-dot { background: var(--warning); }
+.mon-conn.offline .mon-conn-dot { background: var(--muted); }
+.mon-conn.live { color: var(--success); }
+.mon-conn.reconnecting { color: var(--warning); }
+.mon-conn.offline { color: var(--muted); }
+
+/* ---- monitoring: GPU / storage usage bars ---------------------------- */
+.mon-bar { height: 6px; background: var(--panel-2); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.mon-bar-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width .3s ease; }
+.mon-bar-fill.warn { background: var(--warning); }
+.mon-bar-fill.bad  { background: var(--danger); }
+.mon-metric { font-size: var(--fs-xs); color: var(--muted); margin-top: 8px; }
+.mon-metric b { color: var(--text); font-weight: 600; }

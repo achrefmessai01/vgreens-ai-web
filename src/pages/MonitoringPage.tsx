@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type SystemOverview, type Worker } from "../api";
+import {
+  api, ApiError, type SystemOverview, type Worker, type MonitorSnapshot, type MonitorGpu,
+} from "../api";
 import { handleAuthLost } from "../auth";
-import { PageHeader, Button, EmptyState, Skeleton } from "../ui";
+import { PageHeader, Button, EmptyState, Skeleton, Badge } from "../ui";
 import { MetricCard, MetricCardSkeleton, type MetricStatus } from "../components/MetricCard";
 import Trends from "../components/Trends";
 import StatusBadge from "../components/StatusBadge";
@@ -9,6 +11,7 @@ import { fmt, relTime } from "../lib/format";
 import "../styles/overview.css";
 
 const GRAFANA_URL = (import.meta.env.VITE_GRAFANA_URL as string) || "/grafana/";
+const STALE_MS = 15000;
 
 function secs(n: number | null | undefined): string {
   if (n == null) return "—";
@@ -26,6 +29,19 @@ function bytes(n: number | null | undefined): string {
   return `${n.toFixed(1)} ${u[i]}`;
 }
 
+function pct(used: number | null | undefined, total: number | null | undefined): number | null {
+  if (used == null || total == null || total <= 0) return null;
+  return Math.min(100, Math.max(0, (used / total) * 100));
+}
+
+/** Bar colour class: red when nearly full/saturated, amber when high. */
+function barTone(p: number | null | undefined): string {
+  if (p == null) return "";
+  if (p >= 90) return "bad";
+  if (p >= 75) return "warn";
+  return "";
+}
+
 type Overall = "ok" | "degraded" | "down" | "unknown";
 const OVERALL_LABEL: Record<Overall, string> = {
   ok: "Healthy", degraded: "Degraded", down: "Critical", unknown: "Status unknown",
@@ -34,57 +50,86 @@ const OVERALL_FLAG: Record<Overall, MetricStatus> = {
   ok: "ok", degraded: "warn", down: "bad", unknown: "unknown",
 };
 
+type Conn = "connecting" | "connected" | "reconnecting";
+const CONN_META: Record<Conn, { cls: string; label: string }> = {
+  connecting: { cls: "offline", label: "Connecting…" },
+  connected: { cls: "live", label: "Live" },
+  reconnecting: { cls: "reconnecting", label: "Reconnecting…" },
+};
+
 export default function MonitoringPage() {
-  const [s, setS] = useState<SystemOverview | null>(null);
-  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [snap, setSnap] = useState<MonitorSnapshot | null>(null);
   const [ready, setReady] = useState<boolean | undefined>(undefined);
   const [updated, setUpdated] = useState<Date | null>(null);
+  const [conn, setConn] = useState<Conn>("connecting");
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [, setTick] = useState(0);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const [ovR, wR, hR] = await Promise.allSettled([
-      api.systemOverview(), api.workers(), api.health(),
-    ]);
-    for (const r of [ovR, wR, hR]) {
-      if (r.status === "rejected" && r.reason instanceof ApiError && r.reason.status === 401) {
-        return handleAuthLost();
-      }
-    }
-    if (ovR.status === "fulfilled") {
-      setS(ovR.value);
-      setUpdated(new Date());
-      setLoadError(null);
-    } else {
-      setLoadError(ovR.reason instanceof Error ? ovR.reason.message : String(ovR.reason));
-    }
-    if (wR.status === "fulfilled") setWorkers(wR.value);
-    setReady(hR.status === "fulfilled"
-      ? ["ok", "ready"].includes((hR.value as { status?: string }).status ?? "")
-      : undefined);
-    setLoading(false);
+  // Manual retry for the "never loaded" case (the SSE stream reconnects on its own).
+  const retry = useCallback(() => {
+    api.monitorSnapshot()
+      .then((s) => { setSnap(s); setUpdated(new Date()); setLoadError(null); })
+      .catch((e) => {
+        if (e instanceof ApiError && e.status === 401) return handleAuthLost();
+        setLoadError(e instanceof Error ? e.message : String(e));
+      });
   }, []);
 
   useEffect(() => {
-    load();
-    const t = setInterval(load, 15000);
-    return () => clearInterval(t);
-  }, [load]);
+    let alive = true;
 
+    // Health is not part of the stream payload — fetch it once so the summary's
+    // "API services" card stays meaningful.
+    api.health()
+      .then((h) => { if (alive) setReady(["ok", "ready"].includes((h as { status?: string }).status ?? "")); })
+      .catch(() => { if (alive) setReady(undefined); });
+
+    // Initial snapshot so the page paints immediately (before the first SSE frame).
+    api.monitorSnapshot()
+      .then((s) => { if (!alive) return; setSnap(s); setUpdated(new Date()); setLoadError(null); })
+      .catch((e) => {
+        if (!alive) return;
+        if (e instanceof ApiError && e.status === 401) return handleAuthLost();
+        setLoadError(e instanceof Error ? e.message : String(e));
+      });
+
+    // Live updates over SSE. EventSource sends the vg_session cookie automatically
+    // (withCredentials) and auto-reconnects on error — we never close it here.
+    const es = new EventSource(api.monitorStreamUrl(), { withCredentials: true });
+    es.onopen = () => { if (alive) setConn("connected"); };
+    es.onmessage = (ev) => {
+      if (!alive) return;
+      try {
+        const s = JSON.parse(ev.data) as MonitorSnapshot;
+        setSnap(s);
+        setUpdated(new Date());
+        setConn("connected");
+        setLoadError(null);
+      } catch { /* ignore a malformed frame; keep last known data */ }
+    };
+    es.onerror = () => { if (alive) setConn("reconnecting"); }; // keep last data visible
+
+    // UI-only ticker so "last updated" / stale note re-render (NOT API polling).
+    const tick = setInterval(() => setTick((t) => t + 1), 5000);
+
+    return () => { alive = false; es.close(); clearInterval(tick); };
+  }, []);
+
+  const connMeta = CONN_META[conn];
   const header = (
     <PageHeader
       title="Monitoring"
-      description="A curated health view of the platform. Full metrics live in Grafana."
+      description="A live health view of the platform. Full metrics live in Grafana."
       breadcrumbs={[{ label: "Monitoring" }]}
       actions={
         <>
-          <span className="ov-meta">
-            {updated ? `Updated ${updated.toLocaleTimeString()} · auto 15s` : "Loading…"}
+          <span className={`mon-conn ${connMeta.cls}`}>
+            <span className="mon-conn-dot" aria-hidden="true" />
+            {connMeta.label}
           </span>
-          <Button onClick={load} disabled={loading} variant="ghost">
-            {loading ? "Refreshing…" : "Refresh"}
-          </Button>
+          <span className="ov-meta">
+            {updated ? `Updated ${relTime(updated.toISOString())}` : "Loading…"}
+          </span>
           <a className="btn" href={GRAFANA_URL} target="_blank" rel="noreferrer noopener">
             Open Grafana ↗
           </a>
@@ -94,7 +139,7 @@ export default function MonitoringPage() {
   );
 
   // First load, nothing yet.
-  if (s === null && loadError === null) {
+  if (snap === null && loadError === null) {
     return (
       <div>
         {header}
@@ -107,7 +152,7 @@ export default function MonitoringPage() {
   }
 
   // Never loaded and the API is unreachable.
-  if (s === null) {
+  if (snap === null) {
     return (
       <div>
         {header}
@@ -116,7 +161,7 @@ export default function MonitoringPage() {
             The monitoring API could not be reached ({loadError}). Health metrics cannot be shown.
           </p>
           <div style={{ marginTop: 12, display: "flex", gap: 8, justifyContent: "center" }}>
-            <Button onClick={load} disabled={loading}>Retry</Button>
+            <Button onClick={retry}>Retry</Button>
             <a className="btn" href={GRAFANA_URL} target="_blank" rel="noreferrer noopener">Open Grafana ↗</a>
           </div>
         </EmptyState>
@@ -124,10 +169,18 @@ export default function MonitoringPage() {
     );
   }
 
-  // We have (possibly stale) data.
-  const stale = loadError !== null;
+  // We have data (possibly stale if the stream dropped).
+  const s = snap.overview;
+  const workers = snap.workers ?? [];
+  const gpus = snap.gpus ?? [];
+  const storage = snap.storage;
+  const stale = updated != null && Date.now() - updated.getTime() > STALE_MS;
   const overall = computeOverall(s, ready);
   const cards = subsystemCards(s, ready);
+
+  // Combined live problem feed: firing alerts + recent failed jobs.
+  const alertList = s.alerts?.list ?? [];
+  const errList = snap.recent_errors ?? [];
 
   return (
     <div>
@@ -147,71 +200,85 @@ export default function MonitoringPage() {
       {stale && (
         <div className="mon-stale" role="alert">
           <span className="mc-shape" aria-hidden="true" />
-          Metrics temporarily unavailable — last successful update:{" "}
-          {relTime(updated ? updated.toISOString() : null)}. Showing the last known values.
+          Live stream interrupted — last update {relTime(updated ? updated.toISOString() : null)}.
+          Showing the last known values while reconnecting.
         </div>
       )}
 
       {/* subsystem status cards */}
       <div className="mon-sub-grid">
-        {loading && cards.length === 0
-          ? Array.from({ length: 6 }).map((_, i) => <MetricCardSkeleton key={i} />)
-          : cards.map((c) => <MetricCard key={c.title} {...c} />)}
+        {cards.map((c) => <MetricCard key={c.title} {...c} />)}
       </div>
 
       {/* short trends (recharts) — has its own availability handling */}
       <div style={{ marginTop: "var(--space-5)" }}><Trends /></div>
 
-      {/* active alerts */}
-      <h3 className="mon-h">Active alerts</h3>
-      {!s.alerts.available ? (
+      {/* live alerts + recent errors */}
+      <h3 className="mon-h">Alerts &amp; recent errors</h3>
+      {!s.alerts?.available && alertList.length === 0 && errList.length === 0 ? (
         <EmptyState title="Alert state unavailable">
           <p className="muted" style={{ marginTop: 4 }}>
             Metrics temporarily unavailable — Prometheus is unreachable, so firing alerts cannot be listed.
           </p>
         </EmptyState>
-      ) : s.alerts.list.length === 0 ? (
+      ) : alertList.length === 0 && errList.length === 0 ? (
         <EmptyState title="No alerts firing">
-          <p className="muted" style={{ marginTop: 4 }}>All monitored conditions are within thresholds.</p>
+          <p className="muted" style={{ marginTop: 4 }}>All monitored conditions are within thresholds and no jobs have failed recently.</p>
         </EmptyState>
       ) : (
         <table className="table">
-          <thead><tr><th>Severity</th><th>Alert</th><th>Component</th><th>Summary</th></tr></thead>
+          <thead><tr><th>Severity</th><th>Source</th><th>Component</th><th>Summary</th></tr></thead>
           <tbody>
-            {s.alerts.list.map((a) => (
-              <tr key={a.name}>
+            {alertList.map((a) => (
+              <tr key={`alert-${a.name}`}>
                 <td><span className={`badge ${a.severity === "critical" ? "bad" : "warning"}`}>{a.severity}</span></td>
                 <td>{a.name}</td>
                 <td className="muted">{a.component ?? "—"}</td>
                 <td>{a.summary ?? ""}</td>
               </tr>
             ))}
+            {errList.map((e) => (
+              <tr key={`err-${e.job_id}`}>
+                <td><span className="badge bad">failed job</span></td>
+                <td className="mono">{e.job_id}</td>
+                <td className="muted">{e.model_name ?? "—"}</td>
+                <td className="muted">{e.error ?? "—"}</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       )}
 
-      {/* GPU detail */}
+      {/* GPU detail (live, per-GPU) */}
       <h3 className="mon-h">GPUs</h3>
-      {s.gpus.length === 0 ? (
+      {gpus.length === 0 ? (
         <EmptyState title="No GPU data">
-          <p className="muted" style={{ marginTop: 4 }}>GPU metrics are not being reported by any worker.</p>
+          <p className="muted" style={{ marginTop: 4 }}>GPU metrics are not being reported (nvidia-smi unavailable).</p>
         </EmptyState>
       ) : (
         <div className="mon-sub-grid">
-          {s.gpus.map((g) => (
-            <div key={g.index} className="metric-card mc-neutral">
-              <div className="mc-title">GPU {g.index} · {g.name ?? "—"}</div>
-              <div className="mc-sub" style={{ marginTop: 6 }}>
-                util {g.utilization_pct != null ? `${g.utilization_pct}%` : "—"} ·{" "}
-                {g.temperature_c != null ? `${g.temperature_c}°C` : "—"}
-                <br />
-                mem {g.memory_used_mb != null && g.memory_total_mb != null
-                  ? `${g.memory_used_mb} / ${g.memory_total_mb} MB` : "—"}
-              </div>
-            </div>
-          ))}
+          {gpus.map((g) => <GpuCard key={g.index} g={g} />)}
         </div>
       )}
+
+      {/* storage: NAS + NVMe cache */}
+      <h3 className="mon-h">Storage</h3>
+      <div className="mon-sub-grid">
+        <StorageCard
+          title={`NAS · ${storage.nas_path}`}
+          mounted={storage.nas_mounted}
+          total={storage.nas_total_bytes}
+          free={storage.nas_free_bytes}
+          unmountedLabel="Not mounted"
+        />
+        <StorageCard
+          title={`NVMe cache · ${storage.nvme_path}`}
+          mounted={storage.nvme_total_bytes != null}
+          total={storage.nvme_total_bytes}
+          free={storage.nvme_free_bytes}
+          unmountedLabel="Unavailable"
+        />
+      </div>
 
       {/* workers detail */}
       <h3 className="mon-h">Workers</h3>
@@ -223,7 +290,7 @@ export default function MonitoringPage() {
         <table className="table">
           <thead><tr><th>Worker</th><th>Status</th><th>Current job</th><th>Last seen</th><th>Heartbeat age</th></tr></thead>
           <tbody>
-            {workers.map((w) => (
+            {workers.map((w: Worker) => (
               <tr key={w.name}>
                 <td className="mono">{w.name}</td>
                 <td><StatusBadge status={w.online ? "online" : "offline"} /></td>
@@ -236,9 +303,36 @@ export default function MonitoringPage() {
         </table>
       )}
 
+      {/* recent jobs */}
+      <h3 className="mon-h">Recent jobs</h3>
+      {snap.recent_jobs.length === 0 ? (
+        <EmptyState title="No jobs yet">
+          <p className="muted" style={{ marginTop: 4 }}>No jobs have been submitted.</p>
+        </EmptyState>
+      ) : (
+        <table className="table">
+          <thead><tr><th>Job</th><th>Model</th><th>Status</th><th>Duration</th><th>Details</th></tr></thead>
+          <tbody>
+            {snap.recent_jobs.map((j) => (
+              <tr key={j.job_id}>
+                <td className="mono" title={j.job_id}>{j.job_id}</td>
+                <td>{j.model_name ?? "—"}</td>
+                <td><Badge status={j.status} /></td>
+                <td className="muted">{secs(j.duration_seconds)}</td>
+                <td className="muted" style={{ maxWidth: 360, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {j.status === "failed" && j.error
+                    ? <span style={{ color: "var(--danger)" }} title={j.error}>{j.error}</span>
+                    : <span className="mono" title={j.output_path ?? undefined}>{j.output_path ?? "—"}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
       {/* queues detail */}
       <h3 className="mon-h">Queues</h3>
-      {s.queues.length === 0 ? (
+      {(s.queues?.length ?? 0) === 0 ? (
         <EmptyState title="No queues">
           <p className="muted" style={{ marginTop: 4 }}>No job queues are currently defined.</p>
         </EmptyState>
@@ -254,10 +348,69 @@ export default function MonitoringPage() {
       )}
 
       <p className="ov-meta" style={{ marginTop: "var(--space-5)" }}>
-        Backups: {s.backups.count} on the NAS{s.backups.latest
+        Backups: {s.backups?.count ?? 0} on the NAS{s.backups?.latest
           ? `, latest ${s.backups.latest} (${bytes(s.backups.size_bytes)})` : ""}.
         Detailed operator dashboards are in Grafana.
       </p>
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------
+function GpuCard({ g }: { g: MonitorGpu }) {
+  const util = g.utilization_pct ?? null;
+  const memP = pct(g.memory_used_mb, g.memory_total_mb);
+  return (
+    <div className="metric-card mc-neutral">
+      <div className="mc-title">GPU {g.index} · {g.name ?? "—"}</div>
+
+      <div className="mon-metric">
+        <span>Utilisation</span> <b>{util != null ? `${util}%` : "—"}</b>
+        <div className="mon-bar"><div className={`mon-bar-fill ${barTone(util)}`} style={{ width: `${util ?? 0}%` }} /></div>
+      </div>
+
+      <div className="mon-metric">
+        <span>Memory</span>{" "}
+        <b>{g.memory_used_mb != null && g.memory_total_mb != null
+          ? `${g.memory_used_mb} / ${g.memory_total_mb} MB` : "—"}</b>
+        <div className="mon-bar"><div className={`mon-bar-fill ${barTone(memP)}`} style={{ width: `${memP ?? 0}%` }} /></div>
+      </div>
+
+      <div className="mon-metric">
+        temp {g.temperature_c != null ? `${g.temperature_c}°C` : "—"}
+        {g.power_w != null ? ` · ${g.power_w} W` : ""}
+      </div>
+
+      <div className="mon-metric">
+        worker <b>{g.assigned_worker ?? "—"}</b>
+        <br />
+        job {g.current_job
+          ? <span className="mono" title={g.current_job.job_id}>{g.current_job.job_id}{g.current_job.model_name ? ` (${g.current_job.model_name})` : ""}</span>
+          : <span className="muted">idle</span>}
+      </div>
+    </div>
+  );
+}
+
+function StorageCard({ title, mounted, total, free, unmountedLabel }: {
+  title: string; mounted: boolean; total?: number | null; free?: number | null; unmountedLabel: string;
+}) {
+  const used = total != null && free != null ? total - free : null;
+  const p = pct(used, total);
+  return (
+    <div className={`metric-card ${mounted ? "mc-neutral" : "mc-bad"}`}>
+      <div className="mc-title">{title}</div>
+      {!mounted ? (
+        <div className="mc-value" style={{ fontSize: "var(--fs-lg)" }}>{unmountedLabel}</div>
+      ) : (
+        <>
+          <div className="mon-metric">
+            <b>{bytes(used)}</b> used of {bytes(total)} · {bytes(free)} free
+            <div className="mon-bar"><div className={`mon-bar-fill ${barTone(p)}`} style={{ width: `${p ?? 0}%` }} /></div>
+          </div>
+          <div className="mon-metric">{p != null ? `${p.toFixed(0)}% full` : "capacity unknown"}</div>
+        </>
+      )}
     </div>
   );
 }
@@ -323,6 +476,19 @@ function subsystemCards(s: SystemOverview, ready: boolean | undefined): {
     status: s.nas_mounted ? "ok" : "bad",
   });
 
+  // GPUs healthy
+  {
+    const total = s.gpus?.length ?? 0;
+    const hot = (s.gpus ?? []).filter((g) => g.temperature_c != null && g.temperature_c >= 85).length;
+    const status: MetricStatus = total === 0 ? "unknown" : hot > 0 ? "warn" : "ok";
+    cards.push({
+      title: "GPUs",
+      value: total === 0 ? "No data" : `${total - hot}/${total} healthy`,
+      sub: total === 0 ? "nvidia-smi not reporting" : hot > 0 ? `${hot} running hot (≥85°C)` : "All within thermal limits",
+      status,
+    });
+  }
+
   // Workers
   {
     const { online, total } = s.workers;
@@ -347,6 +513,18 @@ function subsystemCards(s: SystemOverview, ready: boolean | undefined): {
       value: `${s.queued_total} queued`,
       sub: sub.join(" · "),
       status,
+    });
+  }
+
+  // Active / failed jobs (live)
+  {
+    const running = Number(s.jobs_by_status?.running ?? 0);
+    const failed = Number(s.jobs_by_status?.failed ?? 0);
+    cards.push({
+      title: "Active jobs",
+      value: `${running} running`,
+      sub: failed > 0 ? `${failed} failed (all-time)` : "no failures recorded",
+      status: running > 0 ? "neutral" : "ok",
     });
   }
 

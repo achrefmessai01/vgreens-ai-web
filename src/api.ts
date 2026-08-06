@@ -281,6 +281,56 @@ export interface SystemOverview {
   alerts: { available: boolean; firing: { critical: number; warning: number }; list: AlertInfo[] };
 }
 
+// ---- LIVE monitoring (Phase 1): the SSE snapshot payload -------------------
+export interface MonitorGpu extends Gpu {
+  power_w?: number | null;
+  assigned_worker?: string | null;
+  current_job?: { job_id: string; model_name?: string | null; requested_by?: string | null } | null;
+}
+
+export interface MonitorRecentJob {
+  job_id: string;
+  job_type?: string | null;
+  model_name?: string | null;
+  status: string;
+  requested_by?: string | null;
+  created_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_seconds?: number | null;
+  output_path?: string | null;
+  result_version?: string | null;
+  error?: string | null;
+}
+
+export interface MonitorRecentError {
+  job_id: string;
+  model_name?: string | null;
+  created_at?: string | null;
+  error?: string | null;
+}
+
+export interface MonitorStorage {
+  nas_mounted: boolean;
+  nas_path: string;
+  nas_total_bytes?: number | null;
+  nas_free_bytes?: number | null;
+  nvme_path: string;
+  nvme_total_bytes?: number | null;
+  nvme_free_bytes?: number | null;
+}
+
+export interface MonitorSnapshot {
+  overview: SystemOverview;
+  gpus: MonitorGpu[];
+  workers: Worker[];
+  recent_jobs: MonitorRecentJob[];
+  recent_errors: MonitorRecentError[];
+  storage: MonitorStorage;
+  generated_at: string;
+  error?: string;   // present only if the server hit an error building this frame
+}
+
 export type TimeseriesRange = "1h" | "6h" | "24h";
 export interface Timeseries {
   range: string;
@@ -331,6 +381,9 @@ export const api = {
   workers: () => request<Worker[]>("/workers"),
   gpus: () => request<Gpu[]>("/gpus"),
   systemOverview: () => request<SystemOverview>("/system/overview"),
+  // LIVE monitoring: initial snapshot (fetch) + SSE stream URL (EventSource).
+  monitorSnapshot: () => request<MonitorSnapshot>("/system/snapshot"),
+  monitorStreamUrl: (): string => `${BASE}/system/stream`,
   systemAlerts: () => request<{ available: boolean; alerts: AlertInfo[] }>("/system/alerts"),
   systemTimeseries: (range: TimeseriesRange = "1h") =>
     request<Timeseries>(`/system/timeseries?range=${range}`),
