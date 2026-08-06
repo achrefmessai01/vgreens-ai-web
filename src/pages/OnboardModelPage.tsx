@@ -5,15 +5,13 @@ import { PageHeader } from "../ui";
 const TASKS = ["object_detection", "classification", "segmentation", "custom"] as const;
 type Task = (typeof TASKS)[number];
 
-const PRESETS: Record<string, { task: Task; legacy?: boolean }> = {
+// Detection/segmentation use RF-DETR (Apache-2.0); classification & other tasks
+// use custom_python. Ultralytics/YOLO is not offered (AGPL-3.0, commercially risky).
+const PRESETS: Record<string, { task: Task }> = {
   rfdetr_detection: { task: "object_detection" },
   rfdetr_segmentation: { task: "segmentation" },
   cnn_classification: { task: "classification" },
   custom_python: { task: "custom" },
-  // Legacy — Ultralytics is AGPL-3.0 (not free for commercial use); prefer RF-DETR.
-  ultralytics_detection: { task: "object_detection", legacy: true },
-  ultralytics_classification: { task: "classification", legacy: true },
-  ultralytics_segmentation: { task: "segmentation", legacy: true },
 };
 const PRESET_FOR_TASK: Record<Task, string> = {
   object_detection: "rfdetr_detection",
@@ -189,9 +187,9 @@ export default function OnboardModelPage() {
                   {TASKS.map((t) => <option key={t} value={t}>{t}</option>)}
                 </select>
               </Field>
-              <Field label="Preset" hint="RF-DETR (Apache-2.0) generates working detection code; segmentation/classification are scaffolds; ultralytics presets are legacy (AGPL).">
+              <Field label="Preset" hint="RF-DETR (Apache-2.0) generates working detection code; segmentation & classification start from the custom_python scaffold.">
                 <select className="input" value={preset} onChange={(e) => setPreset(e.target.value)}>
-                  {Object.entries(PRESETS).map(([p, v]) => <option key={p} value={p}>{p}{v.legacy ? " (legacy · AGPL)" : ""}</option>)}
+                  {Object.keys(PRESETS).map((p) => <option key={p} value={p}>{p}</option>)}
                 </select>
               </Field>
             </div>
