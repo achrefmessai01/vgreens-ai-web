@@ -21,6 +21,7 @@ const DatasetImportPage = lazy(() => import("./pages/DatasetImportPage"));
 const DatasetImportDetailPage = lazy(() => import("./pages/DatasetImportDetailPage"));
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const MonitoringPage = lazy(() => import("./pages/MonitoringPage"));
+const GettingStartedPage = lazy(() => import("./pages/GettingStartedPage"));
 
 export default function App() {
   // undefined = still checking the session; null = logged out; object = logged in
@@ -59,6 +60,7 @@ export default function App() {
             <Route path="datasets/imports/:id" element={<DatasetImportDetailPage />} />
             <Route path="datasets/:name" element={<DatasetDetailPage />} />
             <Route path="monitoring" element={<MonitoringPage />} />
+            <Route path="getting-started" element={<GettingStartedPage />} />
             <Route path="admin" element={<AdminPage />} />
           </Route>
         </Routes>

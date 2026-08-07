@@ -4,6 +4,7 @@ import { api } from "../api";
 import { roleAtLeast } from "../auth";
 import { useAuth } from "../AuthContext";
 import { useTheme } from "../ThemeContext";
+import Onboarding from "./Onboarding";
 
 export default function Layout() {
   const { user, setUser } = useAuth();
@@ -54,6 +55,10 @@ export default function Layout() {
             {roleAtLeast(user?.role, "operator") && <Side to="/submit" icon="＋" text="Submit job" />}
           </Group>
 
+          <Group label="Help">
+            <Side to="/getting-started" icon="?" text="Getting started" />
+          </Group>
+
           {roleAtLeast(user?.role, "admin") && (
             <Group label="Administration"><Side to="/admin" icon="⚙" text="Admin" /></Group>
           )}
@@ -93,6 +98,7 @@ export default function Layout() {
           </Suspense>
         </main>
       </div>
+      <Onboarding />
     </div>
   );
 }

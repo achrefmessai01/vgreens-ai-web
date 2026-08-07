@@ -237,6 +237,14 @@ export default function SubmitPage() {
                       </button>
                     ))}
                   </div>
+                  {gpuCount === 2 && (
+                    <p style={{ margin: "8px 0 0", fontSize: 12.5, color: "#8a6d1a", lineHeight: 1.45 }}>
+                      Note: both GPUs are exposed to the container, but they are only used if the
+                      training code runs distributed (DDP). Onboarded models do this automatically;
+                      a custom image must launch its own multi-process training or it will use only
+                      1&nbsp;GPU. See <a href="#/getting-started">Getting started</a>.
+                    </p>
+                  )}
                 </Field>
               )}
 
