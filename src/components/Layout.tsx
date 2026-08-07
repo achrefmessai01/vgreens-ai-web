@@ -46,6 +46,7 @@ export default function Layout() {
           <Group label="Platform">
             <Side to="/" icon="◧" text="Overview" end />
             <Side to="/jobs" icon="▤" text="Jobs" />
+            <Side to="/experiments" icon="⚖" text="Experiments" />
             <Side to="/datasets" icon="▦" text="Datasets" />
             <Side to="/models" icon="◈" text="Models" />
           </Group>

@@ -229,13 +229,22 @@ export default function JobsPage() {
                     <td className="muted">{j.worker_id ?? "—"}</td>
                     <td className="muted"><span title={fmt(j.created_at)}>{relTime(j.created_at)}</span></td>
                     <td className="cell-actions" onClick={(e) => e.stopPropagation()}>
-                      {cancellable && (
+                      {canOperate && (
                         <OverflowMenu
                           label={`Actions for job ${shortId(j.job_id)}`}
-                          groups={[{
-                            danger: true,
-                            items: [{ label: "Cancel job", danger: true, onSelect: () => { setCancelError(null); setCancelTarget(j); } }],
-                          }]}
+                          groups={[
+                            { items: [{ label: "Clone / re-run", onSelect: () => navigate("/submit", { state: { prefill: {
+                              job_type: j.job_type, model_name: j.model_name,
+                              docker_image: j.docker_image ?? undefined,
+                              dataset_name: j.dataset_name ?? undefined,
+                              dataset_version: j.dataset_version ?? undefined,
+                              tenant: j.tenant ?? undefined, config_path: j.config_path ?? undefined,
+                            } } }) }] },
+                            ...(cancellable ? [{
+                              danger: true,
+                              items: [{ label: "Cancel job", danger: true, onSelect: () => { setCancelError(null); setCancelTarget(j); } }],
+                            }] : []),
+                          ]}
                         />
                       )}
                     </td>

@@ -1,13 +1,21 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Link, useParams } from "react-router-dom";
-import { api, ApiError, type Job, type JobEvent, type JobResult, type JobLogs } from "../api";
-import { handleAuthLost } from "../auth";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { api, ApiError, type Job, type JobEvent, type JobResult, type JobLogs,
+         type JobProgress, type JobExplanation, type CreateJobBody } from "../api";
+import { handleAuthLost, roleAtLeast } from "../auth";
+import { useAuth } from "../AuthContext";
 import StatusBadge from "../components/StatusBadge";
 import { PageHeader, EmptyState, Skeleton, ConfirmDialog, useToast } from "../ui";
 import { duration, fmt, relTime, fmtBytes } from "../lib/format";
 import "../styles/jobs.css";
 
 const ACTIVE = ["queued", "running"];
+
+function fmtEta(s: number | null): string {
+  if (!s || s <= 0) return "—";
+  const m = Math.floor(s / 60), h = Math.floor(m / 60);
+  return h > 0 ? `${h}h ${m % 60}m` : m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
+}
 
 function shortId(id: string): string {
   return id.length <= 16 ? id : `${id.slice(0, 8)}…${id.slice(-4)}`;
@@ -18,6 +26,9 @@ type Tab = "formatted" | "raw";
 export default function JobDetailPage() {
   const { id = "" } = useParams();
   const toast = useToast();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const isOperator = roleAtLeast(user?.role, "operator");
 
   const [job, setJob] = useState<Job | null>(null);
   const [events, setEvents] = useState<JobEvent[]>([]);
@@ -37,6 +48,13 @@ export default function JobDetailPage() {
   const [showLogs, setShowLogs] = useState(false);
   const [logsLoading, setLogsLoading] = useState(false);
   const [logsError, setLogsError] = useState<string | null>(null);
+  const [liveLines, setLiveLines] = useState<string[]>([]);
+  const esRef = useRef<EventSource | null>(null);
+
+  // live progress (#7) + failure explanation (#9) + promote flow (#13)
+  const [progress, setProgress] = useState<JobProgress | null>(null);
+  const [explanation, setExplanation] = useState<JobExplanation | null>(null);
+  const [promoteBusy, setPromoteBusy] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -88,6 +106,65 @@ export default function JobDetailPage() {
     }
   }
 
+  // Live training progress: poll while running (#7).
+  useEffect(() => {
+    if (!job || job.job_type !== "training" || !ACTIVE.includes(job.status)) return;
+    let live = true;
+    const tick = () => api.jobProgress(id).then((p) => { if (live) setProgress(p); }).catch(() => {});
+    tick();
+    const t = setInterval(tick, 4000);
+    return () => { live = false; clearInterval(t); };
+  }, [id, job]);
+
+  // Failure explanation (#9): fetch once when the job has failed.
+  useEffect(() => {
+    if (!job || job.status !== "failed") { setExplanation(null); return; }
+    let live = true;
+    api.jobExplain(id).then((e) => { if (live) setExplanation(e); }).catch(() => {});
+    return () => { live = false; };
+  }, [id, job]);
+
+  // Live logs (#8): stream via SSE while running, else one-shot tail.
+  function loadLive() {
+    setShowLogs(true);
+    setLiveLines([]);
+    esRef.current?.close();
+    const es = new EventSource(api.jobLogStreamUrl(id), { withCredentials: true });
+    esRef.current = es;
+    es.onmessage = (ev) => setLiveLines((prev) => [...prev.slice(-800), ev.data]);
+    es.addEventListener("end", () => { es.close(); esRef.current = null; });
+    es.onerror = () => { es.close(); esRef.current = null; };
+  }
+  useEffect(() => () => { esRef.current?.close(); }, []);
+
+  function cloneJob() {
+    if (!job) return;
+    const prefill: CreateJobBody = {
+      job_type: job.job_type,
+      model_name: job.model_name,
+      docker_image: job.docker_image ?? undefined,
+      dataset_name: job.dataset_name ?? undefined,
+      dataset_version: job.dataset_version ?? undefined,
+      tenant: job.tenant ?? undefined,
+      config_path: job.config_path ?? undefined,
+    };
+    navigate("/submit", { state: { prefill } });
+  }
+
+  async function promoteResult() {
+    if (!job?.model_name || !job.result_version) return;
+    setPromoteBusy(true);
+    try {
+      await api.promoteModel(job.model_name, job.result_version, "promoted from job detail");
+      toast.success(`Promoted ${job.model_name} ${job.result_version}`);
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "auth") return handleAuthLost();
+      toast.error(e instanceof Error ? e.message : "Promote failed.");
+    } finally {
+      setPromoteBusy(false);
+    }
+  }
+
   async function doCancel() {
     setCancelBusy(true);
     setCancelError(null);
@@ -117,6 +194,19 @@ export default function JobDetailPage() {
         actions={
           <>
             <button className="btn ghost" onClick={copyId} title="Copy job id">Copy ID</button>
+            {isOperator && job && (
+              <button className="btn ghost" onClick={cloneJob} title="Re-run this job with tweaks">Clone</button>
+            )}
+            {isOperator && job?.job_type === "training" && job.status === "succeeded" && job.result_version && (
+              <button className="btn" onClick={promoteResult} disabled={promoteBusy}
+                title="Promote this trained version to active">
+                {promoteBusy ? "Promoting…" : "Promote model"}
+              </button>
+            )}
+            {job && (job.status === "succeeded" || job.status === "failed") && (
+              <a className="btn ghost" href={api.jobReportUrl(id)} target="_blank" rel="noreferrer"
+                title="Open the standard job report (JSON)">Report</a>
+            )}
             {canCancel && (
               <button className="btn danger" onClick={() => { setCancelError(null); setConfirmCancel(true); }}>
                 Cancel job
@@ -176,6 +266,69 @@ export default function JobDetailPage() {
                 <section className="panel warn">
                   <h2>Error</h2>
                   <pre className="err-text" style={{ margin: 0 }}>{job.error}</pre>
+                </section>
+              )}
+
+              {/* Failure explanation assistant (#9) */}
+              {job.status === "failed" && explanation && (
+                <section className="panel warn">
+                  <h2>What went wrong</h2>
+                  <p style={{ margin: "0 0 8px" }}>{explanation.cause}</p>
+                  {explanation.suggestions.length > 0 && (
+                    <>
+                      <div className="muted" style={{ fontSize: 13, marginBottom: 4 }}>Suggested fixes</div>
+                      <ul style={{ margin: 0, paddingLeft: 18 }}>
+                        {explanation.suggestions.map((s, i) => <li key={i} style={{ fontSize: 13 }}>{s}</li>)}
+                      </ul>
+                    </>
+                  )}
+                </section>
+              )}
+
+              {/* Live training progress (#7) */}
+              {job.job_type === "training" && progress?.available && (
+                <section className="panel">
+                  <h2>Training progress</h2>
+                  {(() => {
+                    const cur = Number(progress.current_epoch ?? 0);
+                    const total = Number(progress.total_epochs ?? 0);
+                    const pct = total > 0 ? Math.min(100, Math.round((cur / total) * 100)) : 0;
+                    const latest = progress.latest || {};
+                    const metrics = Object.entries(latest).filter(
+                      ([k]) => !["epoch", "total_epochs", "ts", "stage", "world_size"].includes(k));
+                    return (
+                      <>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
+                          <span>Epoch {cur}/{total || "?"}</span>
+                          <span className="muted">ETA {fmtEta(progress.eta_seconds)}</span>
+                        </div>
+                        <div style={{ height: 8, background: "var(--surface-2, #e5e7eb)", borderRadius: 4, overflow: "hidden" }}>
+                          <div style={{ width: `${pct}%`, height: "100%", background: "var(--accent, #16a34a)", transition: "width .4s" }} />
+                        </div>
+                        {metrics.length > 0 && (
+                          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 10, fontSize: 13 }}>
+                            {metrics.map(([k, v]) => (
+                              <span key={k}><span className="muted">{k}:</span> <b className="mono">{String(v)}</b></span>
+                            ))}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                </section>
+              )}
+
+              {/* Live logs while the job runs (#8) — SSE tail of container.log */}
+              {ACTIVE.includes(job.status) && (
+                <section className="panel">
+                  <h2>Live logs</h2>
+                  {esRef.current === null && liveLines.length === 0 ? (
+                    <button className="btn ghost sm-btn" onClick={loadLive}>Stream live logs</button>
+                  ) : (
+                    <pre className="code-block raw-json" style={{ maxHeight: 320, overflow: "auto" }}>
+                      {liveLines.join("\n") || "waiting for output…"}
+                    </pre>
+                  )}
                 </section>
               )}
 

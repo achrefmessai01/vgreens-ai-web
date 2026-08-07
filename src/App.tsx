@@ -22,6 +22,7 @@ const DatasetImportDetailPage = lazy(() => import("./pages/DatasetImportDetailPa
 const AdminPage = lazy(() => import("./pages/AdminPage"));
 const MonitoringPage = lazy(() => import("./pages/MonitoringPage"));
 const GettingStartedPage = lazy(() => import("./pages/GettingStartedPage"));
+const ExperimentsPage = lazy(() => import("./pages/ExperimentsPage"));
 
 export default function App() {
   // undefined = still checking the session; null = logged out; object = logged in
@@ -51,6 +52,7 @@ export default function App() {
             <Route index element={<Dashboard />} />
             <Route path="jobs" element={<JobsPage />} />
             <Route path="jobs/:id" element={<JobDetailPage />} />
+            <Route path="experiments" element={<ExperimentsPage />} />
             <Route path="submit" element={<SubmitPage />} />
             <Route path="models" element={<ModelsPage />} />
             <Route path="models/onboard" element={<OnboardModelPage />} />

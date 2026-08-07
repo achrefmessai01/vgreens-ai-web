@@ -178,6 +178,85 @@ export interface CreateJobBody {
   gpu_count?: number;
 }
 
+export interface RegistryConfig {
+  registry_base: string;
+  namespace: string;
+}
+
+export interface ImageSuggestion {
+  model: string;
+  default_image: string;        // image already recorded for this model (may be "")
+  recent_images: string[];      // distinct images this model was recently run with
+  suggested_ref: string;        // e.g. "strawberry-detector:latest"
+  registry_base: string;
+  namespace: string;
+}
+
+export interface JobTemplate {
+  id: string;
+  name: string;
+  description?: string | null;
+  job_type: "training" | "processing";
+  docker_image?: string | null;
+  gpu_count: number;
+  dataset_name?: string | null;
+  config_yaml?: string | null;
+  defaults?: string | null;      // JSON string of extra CreateJob fields
+  builtin?: number;
+  created_by?: string | null;
+  created_at?: string | null;
+}
+
+export interface PlanCheck {
+  name: string;
+  status: "ok" | "warning" | "error";
+  detail: string;
+}
+
+export interface JobPlan {
+  ok: boolean;
+  resolved_image: string;
+  dataset_version?: string | null;
+  output_path_preview: string;
+  command_preview: string;
+  recommended_gpu: number;
+  gpu_advice: { recommended_gpu: number; reason: string; note?: string };
+  checks: PlanCheck[];
+}
+
+export interface JobProgress {
+  available: boolean;
+  epochs: Record<string, number | string>[];
+  latest: Record<string, number | string> | null;
+  current_epoch: number | null;
+  total_epochs: number | null;
+  eta_seconds: number | null;
+  status: string;
+}
+
+export interface JobExplanation {
+  matched: boolean;
+  cause: string;
+  suggestions: string[];
+  job_status?: string;
+}
+
+export interface CompareRun {
+  job_id: string;
+  found: boolean;
+  job_type?: string;
+  model_name?: string;
+  status?: string;
+  dataset_name?: string | null;
+  dataset_version?: string | null;
+  gpu_count?: number;
+  created_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  result_version?: string | null;
+  metrics?: Record<string, number | string> | null;
+}
+
 export interface DatasetSummary {
   dataset_name: string;
   versions: number;
@@ -432,6 +511,42 @@ export const api = {
   deleteModel: (model: string, force = false) =>
     request<{ model: string; deleted: boolean; archived_to: string; was_active: boolean; forced: boolean }>(
       `/models/${encodeURIComponent(model)}?force=${force}`, { method: "DELETE" }),
+
+  // ---- Registry image helpers (no token ever reaches the browser) ----
+  registryConfig: () => request<RegistryConfig>("/registry/config"),
+  registryResolve: (ref: string, model?: string) => {
+    const q = new URLSearchParams({ ref });
+    if (model) q.set("model", model);
+    return request<{ ref: string; resolved: string }>(`/registry/resolve?${q.toString()}`);
+  },
+  imageSuggest: (model: string, jobType: "training" | "processing" = "training") =>
+    request<ImageSuggestion>(
+      `/registry/suggest?model=${encodeURIComponent(model)}&job_type=${jobType}`),
+
+  // ---- job planning / diagnostics (implement-all-the-ideas feature set) ----
+  planJob: (body: CreateJobBody) =>
+    request<JobPlan>("/jobs/plan", { method: "POST", body: JSON.stringify(body) }),
+  generateConfig: (params: Record<string, unknown>) =>
+    request<{ yaml: string }>("/config/generate", { method: "POST", body: JSON.stringify(params) }),
+  cloneJob: (id: string) => request<CreateJobBody>(`/jobs/${encodeURIComponent(id)}/clone`),
+  jobProgress: (id: string) => request<JobProgress>(`/jobs/${encodeURIComponent(id)}/progress`),
+  jobExplain: (id: string) => request<JobExplanation>(`/jobs/${encodeURIComponent(id)}/explain`),
+  jobReport: (id: string) => request<Record<string, unknown>>(`/jobs/${encodeURIComponent(id)}/report`),
+  jobReportUrl: (id: string): string => `${BASE}/jobs/${encodeURIComponent(id)}/report`,
+  jobLogStreamUrl: (id: string): string => `${BASE}/jobs/${encodeURIComponent(id)}/logs/stream`,
+  compareJobs: (ids: string[]) =>
+    request<{ runs: CompareRun[] }>(`/experiments/compare?ids=${encodeURIComponent(ids.join(","))}`),
+
+  // ---- job templates (#1) ----
+  templates: async (jobType?: string): Promise<JobTemplate[]> => {
+    const q = jobType ? `?job_type=${encodeURIComponent(jobType)}` : "";
+    const r = await request<{ templates: JobTemplate[] }>(`/templates${q}`);
+    return r.templates ?? [];
+  },
+  createTemplate: (body: Partial<JobTemplate> & { name: string; job_type: string }) =>
+    request<JobTemplate>("/templates", { method: "POST", body: JSON.stringify(body) }),
+  deleteTemplate: (id: string) =>
+    request<{ deleted: boolean }>(`/templates/${encodeURIComponent(id)}`, { method: "DELETE" }),
 
   jobDetail: (id: string) => request<Job>(`/jobs/${encodeURIComponent(id)}`),
   jobEvents: (id: string) => request<JobEvent[]>(`/jobs/${encodeURIComponent(id)}/events`),
