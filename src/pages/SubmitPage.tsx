@@ -355,7 +355,7 @@ export default function SubmitPage() {
                 hint="Pick how the container image is chosen. You no longer need to paste a full registry URL — choose a tag and it is resolved for you.">
                 <div className="seg">
                   {([
-                    ["auto", "Auto (registry)"],
+                    ["auto", "Auto (latest build)"],
                     ["select", "Choose tag"],
                     ["custom", "Custom URL"],
                   ] as [typeof imageMode, string][]).map(([m, lbl]) => (
@@ -369,11 +369,11 @@ export default function SubmitPage() {
 
                 {imageMode === "auto" && (
                   <p className="field-hint muted" style={{ marginTop: 8 }}>
-                    Reuses the model's registry image automatically — training uses the
-                    latest version, processing uses the active (promoted) version.
+                    Uses the newest image CI built for this model (training) or the
+                    active/promoted version (processing) — resolved server-side.
                     {sugg?.default_image
                       ? <> Current: <span className="mono">{sugg.default_image}</span></>
-                      : <> No image recorded yet for this model — it resolves at submit time.</>}
+                      : <> No image recorded yet for this model — build it via CI first, then it resolves here.</>}
                   </p>
                 )}
 
