@@ -137,38 +137,48 @@ export default function SubmitPage() {
     return () => { live = false; };
   }, [model, jobType]);
 
+  // Split a full image ref into { repo, tag }. The tag is the part after the
+  // LAST ':' only when it comes after the last '/' (so a registry host with a
+  // port, e.g. registry.vgreens.lan:9443/ns/name, isn't mistaken for a tag).
+  function splitImage(full: string): { repo: string; tag: string } {
+    const slash = full.lastIndexOf("/");
+    const colon = full.lastIndexOf(":");
+    return colon > slash
+      ? { repo: full.slice(0, colon), tag: full.slice(colon + 1) }
+      : { repo: full, tag: "" };
+  }
+
+  // The real image repository for this model comes from the image the platform
+  // has on record (its latest build / recent runs) — NOT from the model name,
+  // which often differs from the GitLab project slug. Strip the tag off that.
+  const knownRepo = useMemo(() => {
+    const known = sugg?.default_image || sugg?.recent_images?.[0] || "";
+    return known ? splitImage(known).repo : "";
+  }, [sugg]);
+
   // The docker_image ref that will be submitted. Blank => the API resolves it.
   const imageRef = useMemo(() => {
     if (imageMode === "custom") return customImage.trim();
     if (imageMode === "select") {
-      const m = model.trim();
-      return m ? `${m}:${imageTag.trim() || "latest"}` : "";
+      // full, correct ref built from the known repo + chosen tag
+      return knownRepo ? `${knownRepo}:${imageTag.trim() || "latest"}` : "";
     }
     return ""; // auto
-  }, [imageMode, customImage, imageTag, model]);
+  }, [imageMode, customImage, imageTag, knownRepo]);
 
-  // Mirror the backend's expand rule so the user sees the exact URL that will run.
-  const resolvedImage = useMemo(() => {
-    const r = imageRef.trim();
-    if (!r) return "";
-    if (r.includes("/")) return r; // explicit / full ref — used verbatim
-    const withTag = r.includes(":") ? r : `${r}:latest`;
-    const base = sugg?.registry_base, ns = sugg?.namespace;
-    return base && ns ? `${base}/${ns}/${withTag}` : withTag;
-  }, [imageRef, sugg]);
+  // What will actually run (full ref, used verbatim by the API).
+  const resolvedImage = useMemo(() => imageRef.trim(), [imageRef]);
 
-  // Distinct tags this model was recently run with (for quick re-use chips).
+  // Tags seen for THIS repo in recent runs (quick re-use chips).
   const recentTags = useMemo(() => {
-    const m = model.trim();
-    if (!m || !sugg) return [];
+    if (!sugg || !knownRepo) return [];
     const tags: string[] = [];
     for (const img of sugg.recent_images) {
-      const last = img.split("/").pop() || img;
-      const [name, tag] = last.split(":");
-      if (name === m && tag && !tags.includes(tag)) tags.push(tag);
+      const { repo, tag } = splitImage(img);
+      if (repo === knownRepo && tag && !tags.includes(tag)) tags.push(tag);
     }
     return tags;
-  }, [model, sugg]);
+  }, [sugg, knownRepo]);
 
   const trainingNeedsDataset = jobType === "training" && !dsName.trim();
   // Version may be left blank — the API resolves the latest frozen version.
@@ -379,31 +389,41 @@ export default function SubmitPage() {
 
                 {imageMode === "select" && (
                   <div style={{ marginTop: 8 }}>
-                    <div className="form-2">
-                      <Field label="Repository" hint="Fixed to the model — no URL to paste.">
-                        <input className="input mono" value={model.trim() || "—"} readOnly disabled />
-                      </Field>
-                      <Field label="Tag" hint="e.g. latest, v1.0.2">
-                        <input className="input" list="tag-options" value={imageTag}
-                          onChange={(e) => setImageTag(e.target.value)} placeholder="latest" />
-                        <datalist id="tag-options">
-                          {recentTags.map((t) => <option key={t} value={t} />)}
-                        </datalist>
-                      </Field>
-                    </div>
-                    {recentTags.length > 0 && (
-                      <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                        <span className="muted" style={{ fontSize: 12 }}>Recent:</span>
-                        {recentTags.map((t) => (
-                          <button type="button" key={t} className="seg-btn"
-                            style={{ padding: "2px 10px", fontSize: 12 }}
-                            onClick={() => setImageTag(t)}>{t}</button>
-                        ))}
-                      </div>
+                    {knownRepo ? (
+                      <>
+                        <div className="form-2">
+                          <Field label="Repository" hint="The model's registry repo — detected, not typed.">
+                            <input className="input mono" value={knownRepo} readOnly disabled />
+                          </Field>
+                          <Field label="Tag" hint="e.g. latest, or a commit SHA like b4fb86fe">
+                            <input className="input" list="tag-options" value={imageTag}
+                              onChange={(e) => setImageTag(e.target.value)} placeholder="latest" />
+                            <datalist id="tag-options">
+                              {recentTags.map((t) => <option key={t} value={t} />)}
+                            </datalist>
+                          </Field>
+                        </div>
+                        {recentTags.length > 0 && (
+                          <div style={{ marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                            <span className="muted" style={{ fontSize: 12 }}>Recent:</span>
+                            {recentTags.map((t) => (
+                              <button type="button" key={t} className="seg-btn"
+                                style={{ padding: "2px 10px", fontSize: 12 }}
+                                onClick={() => setImageTag(t)}>{t}</button>
+                            ))}
+                          </div>
+                        )}
+                        <p className="field-hint muted" style={{ marginTop: 8 }}>
+                          Resolves to <span className="mono">{resolvedImage || "…"}</span>
+                        </p>
+                      </>
+                    ) : (
+                      <p className="field-hint muted" style={{ marginTop: 8 }}>
+                        No image is on record for this model yet, so the repository can't be
+                        auto-detected. Build it once via CI (then use <b>Auto</b>), or paste the
+                        full reference under <b>Custom URL</b>.
+                      </p>
                     )}
-                    <p className="field-hint muted" style={{ marginTop: 8 }}>
-                      Resolves to <span className="mono">{resolvedImage || "…"}</span>
-                    </p>
                   </div>
                 )}
 
