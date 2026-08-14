@@ -286,24 +286,31 @@ export default function JobDetailPage() {
               )}
 
               {/* Live training progress (#7) */}
-              {job.job_type === "training" && progress?.available && (
+              {job.job_type === "training" && progress?.available && ACTIVE.includes(job.status) && (
                 <section className="panel">
                   <h2>Training progress</h2>
                   {(() => {
                     const cur = Number(progress.current_epoch ?? 0);
                     const total = Number(progress.total_epochs ?? 0);
-                    const pct = total > 0 ? Math.min(100, Math.round((cur / total) * 100)) : 0;
+                    const running = ACTIVE.includes(job.status);
+                    // "waiting" = job is running but no epoch row yet (only the start line)
+                    const waiting = running && cur <= 0;
+                    const pct = total > 0 && cur > 0 ? Math.min(100, Math.round((cur / total) * 100)) : 0;
                     const latest = progress.latest || {};
                     const metrics = Object.entries(latest).filter(
                       ([k]) => !["epoch", "total_epochs", "ts", "stage", "world_size"].includes(k));
                     return (
                       <>
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 4 }}>
-                          <span>Epoch {cur}/{total || "?"}</span>
-                          <span className="muted">ETA {fmtEta(progress.eta_seconds)}</span>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 5 }}>
+                          <span>{waiting ? "Starting — waiting for first epoch…" : `Epoch ${cur}/${total || "?"}`}</span>
+                          <span className="muted">
+                            {waiting ? "" : `${pct}%`}{!waiting && progress.eta_seconds ? ` · ETA ${fmtEta(progress.eta_seconds)}` : ""}
+                          </span>
                         </div>
-                        <div style={{ height: 8, background: "var(--surface-2, #e5e7eb)", borderRadius: 4, overflow: "hidden" }}>
-                          <div style={{ width: `${pct}%`, height: "100%", background: "var(--accent, #16a34a)", transition: "width .4s" }} />
+                        <div className={`progress-track${waiting ? " indeterminate" : ""}`}
+                             role="progressbar" aria-valuenow={waiting ? undefined : pct}
+                             aria-valuemin={0} aria-valuemax={100}>
+                          <div className="progress-fill" style={waiting ? undefined : { width: `${pct}%` }} />
                         </div>
                         {metrics.length > 0 && (
                           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginTop: 10, fontSize: 13 }}>

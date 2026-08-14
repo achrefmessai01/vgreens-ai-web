@@ -105,3 +105,31 @@
 .submit-done h2 { margin: 0 0 6px; font-size: var(--fs-lg); color: var(--text); text-transform: none; letter-spacing: 0; }
 .submit-done .sd-id { margin-bottom: 18px; }
 .submit-done .sd-actions { display: flex; gap: 10px; justify-content: center; }
+
+/* Live training progress bar (job detail) */
+.progress-track {
+  position: relative;
+  height: 9px;
+  background: var(--surface-2, #e6e8ea);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--accent, #1f6f43);
+  border-radius: 999px;
+  transition: width .5s ease;
+}
+/* indeterminate: job running but first epoch not reported yet */
+.progress-track.indeterminate .progress-fill {
+  width: 35%;
+  border-radius: 999px;
+  animation: vg-progress-slide 1.2s ease-in-out infinite;
+}
+@keyframes vg-progress-slide {
+  0%   { transform: translateX(-120%); }
+  100% { transform: translateX(320%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .progress-track.indeterminate .progress-fill { animation: none; width: 100%; opacity: .5; }
+}
